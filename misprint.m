@@ -13,12 +13,12 @@ classdef misprint < handleAllHidden
     %         'numTraceCol',40,'firstCol',140,'lastCol',300,...
     %         'parallel',false);
     %
-    %     s2r.getMaskForIncompleteOrders;
-    %     s2r.traceSpectra;
-    %     s2r.extractSpectra;
-    %     s2r.getP2PVariationsAndBlaze(false);
+    %     self.getMaskForIncompleteOrders;
+    %     self.traceSpectra;
+    %     self.extractSpectra;
+    %     self.getP2PVariationsAndBlaze(false);
     %
-    %     s2r.plotSpectraFor(1:14,true,false)
+    %     self.plotSpectraFor(1:14,true,false)
     %
     % Copyright (C) Chris Betters 2012-2014
     
@@ -62,12 +62,14 @@ classdef misprint < handleAllHidden
         
         spectraValues, % extracted spectra values.
         spectraVar, % var for extracted spec values.
-        P2PVariationValues, % pixel to pixel variation from reference.
-        flatBlaze, % estimated blaze from reference.
-        wavefit,% matfile with wavefit
-        diffractionOrder, % estimated diffraction order from wavefit
+        backgroundValues, % background value from extraction
         
         referenceSpectraValues, % extracted spectraValues of reference/flat
+        P2PVariationValues, % pixel to pixel variation from reference.
+        flatBlaze, % estimated blaze from reference.
+        
+        wavefit,% matfile with wavefit
+        diffractionOrder, % estimated diffraction order from wavefit
         
         numTraceCol, % number of columns to use when tracing.
         firstCol, % first column of trace
@@ -115,6 +117,7 @@ classdef misprint < handleAllHidden
             p.addParamValue('lastCol', 0, @(x) isnumeric(x));
             p.addParamValue('clipping',[0 0 0 0], @(x) isnumeric(x) && length(x)==4)
             
+            
             p.parse(targetBaseFilename,varargin{:});
             
             self.numOfOrders=p.Results.numOfOrders;
@@ -138,10 +141,11 @@ classdef misprint < handleAllHidden
             self.minPeakSeperation=p.Results.minPeakSeperation;
             
             self.clipping=p.Results.clipping;
+            
             if ~isempty(p.Results.wavesolution)
                 matpayload=load(p.Results.wavesolution);
                 self.wavefit=matpayload.wavefit;
-                self.diffractionOrder=round(2*1e-3/31.6*sind(63.2)./(mean(squeeze(mean(self.wavefit,2)),1)*1e-10)');
+                self.diffractionOrder=round(2*1e-3/31.6*cosd(5)*sind(63.2)./(mean(squeeze(mean(self.wavefit,2)),1)*1e-10)');
             end
             
             %% start matlabpool if parallel computing tool box avaliable
@@ -256,7 +260,7 @@ classdef misprint < handleAllHidden
             
             %self.imdata=rot90(self.imdata,2);
             self.imdim=size(self.imdata);
-            self.imvariance=(self.readNoise/self.gain)^2 + abs(self.imdata) / self.gain;
+            self.imvariance=(self.readNoise/self.gain)^2 + abs(self.imdata) / self.gain; %http://cxc.cfa.harvard.edu/mta/ASPECT/aca_read_noise/
             
             %% trace col
             if ~self.lastCol
@@ -565,8 +569,8 @@ classdef misprint < handleAllHidden
             else
                 assertWarn(force,'MISPRINT:getP2PVariationsAndBlaze:forced','P2P and blaze forced')
                 mask=ones(self.numOfFibers,self.imdim(2));
-%                 mask(end-50:end)=NaN;
-%                 mask(1:50)=NaN;
+                mask(end-50:end)=NaN;
+                mask(1:50)=NaN;
                 
                 spectraValues=self.spectraValues;
                 for or=1:self.numOfOrders
@@ -577,7 +581,7 @@ classdef misprint < handleAllHidden
                 
                 for f=1:self.numOfFibers
                     for or=1:self.numOfOrders
-                        flatBlaze(f,:,or)=csaps(1:self.imdim(2),spectraValues(f,:,or),1e-4,1:self.imdim(2));
+                        flatBlaze(f,:,or)=csaps(1:self.imdim(2),spectraValues(f,:,or),1e-9,1:self.imdim(2));
                         %flatBlaze(f,:,or)=smooth(spectraValues(f,:,or),100);
                     end
                 end
@@ -606,8 +610,8 @@ classdef misprint < handleAllHidden
                 for order=orders
                     figure(order);clf;
                     subplot(1,2,1)
-                    imagesc(log10(self.imdata-min2(self.imdata)+1))
-                    %imagesc(self.imdata)
+                    %imagesc(log10(self.imdata-min2(self.imdata)+1))
+                    imagesc(self.imdata)
                     %set(gca, 'CLim',[0 1000])
                     ylim([min2(squeeze(self.specCenters(order,:,:)))-50 max2(squeeze(self.specCenters(order,:,:)))+50])
                     hold on
@@ -617,7 +621,7 @@ classdef misprint < handleAllHidden
                     subplot(1,2,2)
                     for f=1:self.numOfFibers
                         FlattenedSpectraNorm(f,:,order)=FlattenedSpectra(f,:,order)/(max(FlattenedSpectra(f,:,order)));
-                        plot(1:self.imdim(2),FlattenedSpectraNorm(f,:,order)+(self.numOfFibers-f+1)*1)
+                        plot(1:self.imdim(2),FlattenedSpectraNorm(f,:,order)+(self.numOfFibers-f)*1)
                         hold all
                     end
                 end
@@ -629,6 +633,7 @@ classdef misprint < handleAllHidden
                     
                     subplot(1,2,1)
                     imagesc(log10(self.imdata-min2(self.imdata)+1))
+                    %imagesc(self.imdata)
                     %set(gca, 'CLim',[0 1000])
                     ylim([min2(squeeze(self.specCenters(order,:,:)))-50 max2(squeeze(self.specCenters(order,:,:)))+50])
                     hold on
@@ -638,11 +643,13 @@ classdef misprint < handleAllHidden
                     ylabel('Cross-dispersion axis (pixels)')
                     
                     subplot(1,2,2)
-                    for f=1:self.numOfFibers
-                        FlattenedSpectraNorm(f,:,order)=FlattenedSpectra(f,:,order)/max(max(FlattenedSpectra(:,:,order)));
-                        plot(self.wavefit(f,:,order),FlattenedSpectraNorm(f,:,order)+(self.numOfFibers-f)*0.25)
-                        hold all
-                    end
+                    %                     for f=1:self.numOfFibers
+                    %                         FlattenedSpectraNorm(f,:,order)=FlattenedSpectra(f,:,order)/max(FlattenedSpectra(f,:,order));
+                    %                         plot(self.wavefit(f,:,order),FlattenedSpectraNorm(f,:,order)+(self.numOfFibers-f)*0.25)
+                    %                         hold all
+                    %                     end
+                    
+                    plot(self.wavefit(:,:,order)',FlattenedSpectra(:,:,order)')
                     xlabel('Wavelength (nm)')
                 end
                 hold off
@@ -718,48 +725,48 @@ classdef misprint < handleAllHidden
         end
         
         function getBackgroundBetweenOrders(self)
-            s2r.imdata(s2r.imdata<0)=0;
-            locs=s2r.orderEdges';
+            self.imdata(self.imdata<0)=0;
+            locs=self.orderEdges';
             locs(locs>3362)=3362;
             
-            imagesc(log10(s2r.imdata))
+            imagesc(log10(self.imdata))
             hold on;
-            plot(s2r.fittedCol,locs','bx')
+            plot(self.fittedCol,locs','bx')
             hold off;
             pks=[];
             
             
-            filtedimdata=medfilt2(s2r.imdata);
+            filtedimdata=medfilt2(self.imdata);
             
             %locs(89,:)=(locs(88,:) + locs(90,:)) / 2;
             
             for i = 1:size(locs,2)
-                %    pks(i,:)=s2r.imdata(s2r.fittedCol,round(s2r.orderEdges(,:)));
-                p = impixel(filtedimdata,s2r.fittedCol,locs(:,i)');
+                %    pks(i,:)=self.imdata(self.fittedCol,round(self.orderEdges(,:)));
+                p = impixel(filtedimdata,self.fittedCol,locs(:,i)');
                 pks(:,i) = p(:,1);
             end
             
             
             
-            cols=s2r.fittedCol;
+            cols=self.fittedCol;
             
             
             
             %% scattered light estimate
             
-            invertedimdata=(1./(s2r.imdata)).*s2r.mask;
+            invertedimdata=(1./(self.imdata)).*self.mask;
             invertedimdata(isinf(invertedimdata))=0;
             figure(1)
             imagesc(log10(invertedimdata))
-            x=1:s2r.imdim(1);
+            x=1:self.imdim(1);
             
             
             inverpks=1./pks;
             cols2=repmat(cols,[size(locs,2),1])';
             figure(3);clf
             h(2)=surface(cols2,locs,pks,'EdgeColor','none');
-            xlim([1 s2r.imdim(2)])
-            ylim([1 s2r.imdim(1)])
+            xlim([1 self.imdim(2)])
+            ylim([1 self.imdim(1)])
             set(get(h(2),'Parent'),'YDir','reverse')
             
             
@@ -769,40 +776,40 @@ classdef misprint < handleAllHidden
             
             
             figure(4);clf
-            [XI,YI]=meshgrid(1:s2r.imdim(2), 1:s2r.imdim(1));
+            [XI,YI]=meshgrid(1:self.imdim(2), 1:self.imdim(1));
             
             subplot(1,2,2)
-            imagesc(1./feval(sfun,XI,YI).*s2r.mask)
+            imagesc(1./feval(sfun,XI,YI).*self.mask)
             title('Estimated Scattering (from Inter-Order Regions)')
             
             subplot(1,2,1)
             h(2)=surface(cols2,locs,1./pks,'EdgeColor','none');
-            xlim([1 s2r.imdim(2)])
-            ylim([1 s2r.imdim(1)])
+            xlim([1 self.imdim(2)])
+            ylim([1 self.imdim(1)])
             set(get(h(2),'Parent'),'YDir','reverse')
             
             
-            %s2r.imdata=s2r.imdata-feval(sfun,X,Y)
-            imagesc(s2r.imdata-1./feval(sfun,XI,YI))
+            %self.imdata=self.imdata-feval(sfun,X,Y)
+            imagesc(self.imdata-1./feval(sfun,XI,YI))
             hold on; plot(cols2,locs,'wx');hold off
             title('PIMMS Echelle Detector Image')
             
-            %s2r.imdata=s2r.imdata-1./feval(sfun,XI,YI)
+            %self.imdata=self.imdata-1./feval(sfun,XI,YI)
             
             
             %%
             
-            imagesc(log10(s2r.imdata))
+            imagesc(log10(self.imdata))
             
             return
-            s2r.forceTrace=true;
-            s2r.forceExtract=true;
+            self.forceTrace=true;
+            self.forceExtract=true;
             
-            s2r.getMaskForIncompleteOrders;
-            s2r.traceSpectra;
-            %s2r.specCenters=s2r.specCenters;
-            s2r.extractSpectra;
-            s2r.getP2PVariationsAndBlaze
+            self.getMaskForIncompleteOrders;
+            self.traceSpectra;
+            %self.specCenters=self.specCenters;
+            self.extractSpectra;
+            self.getP2PVariationsAndBlaze
             set(0,'DefaultFigureWindowStyle','docked')
             
         end
