@@ -117,7 +117,6 @@ classdef misprint < handleAllHidden
             p.addParamValue('lastCol', 0, @(x) isnumeric(x));
             p.addParamValue('clipping',[0 0 0 0], @(x) isnumeric(x) && length(x)==4)
             
-            
             p.parse(targetBaseFilename,varargin{:});
             
             self.numOfOrders=p.Results.numOfOrders;
@@ -151,8 +150,8 @@ classdef misprint < handleAllHidden
             %% start matlabpool if parallel computing tool box avaliable
             if self.parallel
                 if license('test', 'distrib_computing_toolbox')
-                    if ~matlabpool('size')
-                        matlabpool(4)
+                    if isempty(gcp('nocreate'))
+                        parpool('local')
                     end
                 else
                     warning('MISPRINT:init:useDistribComputingToolbox:notAvalaible','The parallel computing toolbox is not avaliable, but has been requested.')
@@ -797,7 +796,7 @@ classdef misprint < handleAllHidden
                             squeeze(self.specCenters(order,:,col))',...
                             squeeze(self.specWidth(order,:,col))',...
                             self.readNoise/self.gain);
-                    end sour
+                    end
                     spectraValues(:,:,order)=spectra;
                     spectraVar(:,:,order)=specVar;
                     %                     backgroundValues=background;
@@ -883,7 +882,7 @@ classdef misprint < handleAllHidden
                 phi=bsxfun(@times, phi3, specPeaks);
                 
                 phi(phi<1e-8)=0;
-            end 
+            end
         end
     end
     
