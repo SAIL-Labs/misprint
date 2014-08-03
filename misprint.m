@@ -209,6 +209,8 @@ classdef misprint < handleAllHidden
             %% check for required cards in fits header and read the values. add defaults where unavaliable.
             if isfield(self.targetHeader,'READNOIS')
                 self.readNoise=self.targetHeader.READNOIS;
+            elseif isfield(self.targetHeader,'RO_NOISE')
+                self.readNoise=self.targetHeader.RO_NOISE;
             else
                 self.readNoise=10; % atik default
                 %                 if strcmp(self.targetHeader.INSTRUME,'ArtemisHSC')
@@ -218,6 +220,8 @@ classdef misprint < handleAllHidden
             
             if isfield(self.targetHeader,'GAIN')
                 self.gain=self.targetHeader.GAIN;
+            elseif isfield(self.targetHeader,'RO_GAIN')
+                self.gain=self.targetHeader.RO_GAIN;
             else
                 self.gain=0.46; % atik default
                 %                 if strcmp(self.targetHeader.INSTRUME,'ArtemisHSC')
