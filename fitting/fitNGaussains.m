@@ -3,8 +3,8 @@ function [peaks,means,widths,fitsvalue,fitresult, gof] = fitNGaussains(N,x,y,pea
 if nargin==4
     plotting=0;
 end
-x(y<=0)=[];
-y(y<=0)=[];
+%x(y<=0)=[];
+%y(y<=0)=[];
 maxy=max(y);
 y=y/maxy;
 %y=y-median(y); % median baseline subtracte

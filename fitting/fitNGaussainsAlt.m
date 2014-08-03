@@ -7,6 +7,8 @@ x(y<=0)=[];
 y(y<=0)=[];
 maxy=max(y);
 y=y/maxy;
+
+y=y-mean(y(1:4));
 %y=y-median(y); % median baseline subtracte
 
 minpeakheight=max(y)*peakcut;
@@ -17,16 +19,18 @@ peakPosEstimate=x(peakXInd);
 
 %% fit
 options = optimset('Display','off',...
-    'Algorithm','levenberg-marquardt',...
     'TolFun',1e-8,...
     'TolX',1e-8);
+%    'Algorithm','levenberg-marquardt',...
 
-x0=[peakEstimate' peakPosEstimate' ones(1,N)*2 0.1];
+x0=[peakEstimate' peakPosEstimate' ones(1,N) 0.1];
+xlb=[peakEstimate'*0.8 peakPosEstimate'*0.9 ones(1,N)*0.8 0];
+xub=[peakEstimate'*1.2 peakPosEstimate'*1.1 ones(1,N)*3 0.2];
 
 
 fun = @(co,xData) sum(nGausFunc(co,xData,N),2);
 
-[xfitted,resnorm] = lsqcurvefit(fun,x0,x,y,[],[],options);
+[xfitted,resnorm] = lsqcurvefit(fun,x0,x,y,xlb,xub,options);
 
 %% export
 peaks=xfitted(1:N)*maxy;
