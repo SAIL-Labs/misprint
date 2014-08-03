@@ -88,6 +88,8 @@ classdef misprint < handleAllHidden
         
         usecurrentfolderonly, % flag to note use my maxiumDL/PIMMS echelle file structure.
         peakcut, % MINPEAKHEIGHT for spectra tracing detection. (fraction of mean of current profile).
+        
+        OXmethod, % name of method to use for optimal extraction.
     end
     
     methods
@@ -116,6 +118,7 @@ classdef misprint < handleAllHidden
             p.addParamValue('firstCol', 0, @(x) isnumeric(x));
             p.addParamValue('lastCol', 0, @(x) isnumeric(x));
             p.addParamValue('clipping',[0 0 0 0], @(x) isnumeric(x) && length(x)==4)
+            p.addParamValue('OXmethod','MPDoptimalExt', @(x) ismethod(self,x))
             
             p.parse(targetBaseFilename,varargin{:});
             
@@ -140,6 +143,7 @@ classdef misprint < handleAllHidden
             self.minPeakSeperation=p.Results.minPeakSeperation;
             
             self.clipping=p.Results.clipping;
+            self.OXmethod=p.Results.OXmethod;
             
             if ~isempty(p.Results.wavesolution)
                 matpayload=load(p.Results.wavesolution);
@@ -791,7 +795,7 @@ classdef misprint < handleAllHidden
                         
                         %         x=repmat(profileApeture',[19,1]);
                         %         bsxfun(@minus,x,squeeze(specCenters(order,:,col)))
-                        [spectra(:,col), specVar(:,col), backgroundValues(profileApeture,col)]=self.MPDoptimalExt(...
+                        [spectra(:,col), specVar(:,col), backgroundValues(profileApeture,col)]=self.(self.OXmethod)(...
                             profileApeture,orderProfile',varProfile,...
                             squeeze(self.specCenters(order,:,col))',...
                             squeeze(self.specWidth(order,:,col))',...
