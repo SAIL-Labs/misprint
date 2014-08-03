@@ -8,7 +8,7 @@ classdef misprint < handleAllHidden
     %         'usecurrentfolderonly',true,...
     %         'numOfOrders',14,'numOfFibers',29,...
     %         'forceTrace',false,'forceExtract',false,...
-    %         'forceDefineMaskEdge',false,'needsClip',false,...
+    %         'forceDefineMaskEdge',false,'needsMask',false,...
     %         'peakcut',0.07,'minPeakSeperation',3,...
     %         'numTraceCol',40,'firstCol',140,'lastCol',300,...
     %         'parallel',false);
@@ -43,7 +43,8 @@ classdef misprint < handleAllHidden
         forceTrace, % flag to force a trace of spectra in the current image. Can not be set with a reference.
         forceExtract, % flag to force a new extraction of the current image. This will overwrite the default save file if it exists.
         forceDefineMaskEdge, % flag to force a new definition of the mask/clipping region.
-        needsClip, % flag to indicate if image requires clipping.
+        needsMask, % flag to indicate if image requires clipping.
+        clipping, % vector of pixels from [left top right bottom] to clip.
         parallel, % flag tin indicate if parallel compuyting toolbox should/can be used.
         minPeakSeperation, % min peak seperation for tracing and peakfinder
         
@@ -100,7 +101,7 @@ classdef misprint < handleAllHidden
             p.addParamValue('forceExtract'          , false, @(x) islogical(x));
             p.addParamValue('plotAlot'      , false, @(x) islogical(x));
             p.addParamValue('forceDefineMaskEdge', false, @(x) islogical(x));
-            p.addParamValue('needsClip', true, @(x) islogical(x));
+            p.addParamValue('needsMask', true, @(x) islogical(x));
             p.addParamValue('numOfOrders', 15, @(x) isnumeric(x));
             p.addParamValue('numOfFibers', 19, @(x) isnumeric(x));
             p.addParamValue('usecurrentfolderonly',false, @(x) islogical(x));
@@ -112,6 +113,7 @@ classdef misprint < handleAllHidden
             p.addParamValue('minPeakSeperation', 3, @(x) isnumeric(x));
             p.addParamValue('firstCol', 0, @(x) isnumeric(x));
             p.addParamValue('lastCol', 0, @(x) isnumeric(x));
+            p.addParamValue('clipping',[0 0 0 0], @(x) isnumeric(x) && length(x)==4)
             
             p.parse(targetBaseFilename,varargin{:});
             
@@ -121,7 +123,7 @@ classdef misprint < handleAllHidden
             self.forceTrace=p.Results.forceTrace;
             self.plotAlot=p.Results.plotAlot;
             self.forceDefineMaskEdge=p.Results.forceDefineMaskEdge;
-            self.needsClip=p.Results.needsClip;
+            self.needsMask=p.Results.needsMask;
             
             self.usecurrentfolderonly=p.Results.usecurrentfolderonly;
             self.peakcut=p.Results.peakcut;
@@ -135,6 +137,7 @@ classdef misprint < handleAllHidden
             
             self.minPeakSeperation=p.Results.minPeakSeperation;
             
+            self.clipping=p.Results.clipping;
             if ~isempty(p.Results.wavesolution)
                 matpayload=load(p.Results.wavesolution);
                 self.wavefit=matpayload.wavefit;
@@ -238,6 +241,15 @@ classdef misprint < handleAllHidden
             if self.dispAxis==1
                 self.imdata=(self.imdata'); %fliplr
             end
+            
+            if sum(self.clipping)
+                %[left top right bottom]
+                self.imdata=self.imdata(max([1 self.clipping(2)]):end-self.clipping(4),max([1 self.clipping(1)]):end-self.clipping(3));
+                if ~isempty(self.wavefit)
+                    self.wavefit=self.wavefit(:,max([1 self.clipping(1)]):end-self.clipping(3),:);
+                end
+            end
+            
             %self.imdata=rot90(self.imdata,2);
             self.imdim=size(self.imdata);
             self.imvariance=(self.readNoise/self.gain)^2 + abs(self.imdata) / self.gain;
@@ -469,7 +481,7 @@ classdef misprint < handleAllHidden
         function getMaskForIncompleteOrders(self)
             %  get mask for incomplete orders
             
-            if ~self.needsClip
+            if ~self.needsMask
                 self.mask=ones(self.imdim);
                 return % no clipe, so mask is ones.
             end
