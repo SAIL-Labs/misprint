@@ -784,26 +784,32 @@ classdef misprint < handleAllHidden
                     %background=zeros(size(self.imdata));
                     
                     disp(['Extracting Order: ' num2str(order)])
-                    for col=1:self.imdim(2)
-                        orderCenter=mean(self.specCenters(order,:,col));
+                    orderSpecCenters=squeeze(self.specCenters(order,:,:));
                         
-                        profileApeture=max(round(orderCenter-self.meanOrderWidth/2),1):...
+                    % split into apetures
+                    parfor col=1:self.imdim(2)
+                        orderCenter=mean(orderSpecCenters(:,col));
+                        profileApeture{col}=max(round(orderCenter-self.meanOrderWidth/2),1):...
                             min(round(orderCenter+self.meanOrderWidth/2),self.imdim(1));
+                        orderProfile(col)={self.imdata(profileApeture{col},col)};
+                        varProfile(col)={self.imvariance(profileApeture{col},col)'};
+                    end
                         
-                        orderProfile=self.imdata(profileApeture,col);
-                        varProfile=self.imvariance(profileApeture,col)';
-                        
-                        %         x=repmat(profileApeture',[19,1]);
-                        %         bsxfun(@minus,x,squeeze(specCenters(order,:,col)))
-                        [spectra(:,col), specVar(:,col), backgroundValues(profileApeture,col)]=self.(self.OXmethod)(...
-                            profileApeture,orderProfile',varProfile,...
+                    % do extraction
+                    parfor col=1:self.imdim(2)
+                        [spectra(:,col), specVar(:,col), background{col}]=self.(self.OXmethod)(...
+                            profileApeture{col},orderProfile{col}',varProfile{col},...
                             squeeze(self.specCenters(order,:,col))',...
                             squeeze(self.specWidth(order,:,col))',...
                             self.readNoise/self.gain);
                     end
+                    
+                    % unfold into final variables
+                    for col=1:self.imdim(2)
+                        backgroundValues(profileApeture{col},col)=background{col};
+                    end
                     spectraValues(:,:,order)=spectra;
                     spectraVar(:,:,order)=specVar;
-                    %                     backgroundValues=background;
                 end
                 
                 spectra1DHDR=createcards('NUMORDER',self.numOfOrders,'number of orders');
