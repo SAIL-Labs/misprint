@@ -785,7 +785,7 @@ classdef misprint < handleAllHidden
                     
                     disp(['Extracting Order: ' num2str(order)])
                     orderSpecCenters=squeeze(self.specCenters(order,:,:));
-                        
+                    
                     % split into apetures
                     parfor col=1:self.imdim(2)
                         orderCenter=mean(orderSpecCenters(:,col));
@@ -794,7 +794,7 @@ classdef misprint < handleAllHidden
                         orderProfile(col)={self.imdata(profileApeture{col},col)};
                         varProfile(col)={self.imvariance(profileApeture{col},col)'};
                     end
-                        
+                    
                     % do extraction
                     parfor col=1:self.imdim(2)
                         [spectra(:,col), specVar(:,col), background{col}]=self.(self.OXmethod)(...
@@ -831,122 +831,80 @@ classdef misprint < handleAllHidden
             self.backgroundValues=backgroundValues;
         end
         
-        function [spectraValues, spectraErrors, background]=MPDoptimalExtBack(~,dataRows,orderProfile,varProfile,specCenters,specWidth,RN)
+        function [spectraValues, spectraErrors, background, chi2]=MPDoptimalExtBack(self,dataRows,orderProfile,varProfile,specCenters,specWidth,RN)
             % Multi-Profile Deconvolution Optimal Extraction as described by Sharp & Birchall (2010)
             %
             % paper: Sharp R., Birchall M. N. (2010) Optimal Extraction of Fibre Optic Spectroscopy. PASA 27, pp. 91-103.
             %        http://dx.doi.org/10.1071/AS08001
             
-            phi=getPhi(dataRows,specCenters,2*log(2)*specWidth,[ones(length(specCenters),1)]);
+            if iscolumn(orderProfile); orderProfile=orderProfile'; disp(1); end
+            if iscolumn(varProfile); varProfile=varProfile'; disp(2); end
+            if iscolumn(dataRows); dataRows=dataRows'; disp(3); end
+            if isrow(specCenters);specCenters=specCenters'; disp(4); end
+            if isrow(specWidth);specWidth=specWidth'; disp(5); end
             
+            phi=self.getPhi(dataRows,specCenters,2*log(2)*specWidth,[ones(length(specCenters),1)]);
+            
+            [xout,~,~,~] = fminsearch(@optimizeBackgroundFit, polyfit(dataRows,orderProfile/sum(orderProfile),1));
+            
+            [chi2, fittedValues, fittedErrors, M]=optimizeBackgroundFit(xout);
+            
+            spectraValues=fittedValues(1:end-1);
+            spectraErrors=fittedErrors(1:end-1);
+            background=fittedValues(end)*polyval(xout,dataRows)/sum(polyval(xout,dataRows));
+            
+            function [chi2, fittedValues, fittedErrors, M]=optimizeBackgroundFit(x)
+                %setup
+                phifit=[phi; polyval(x,dataRows)/sum(polyval(x,dataRows))];%ones(1,size(phi,2))/size(phi,2) %([1:size(phi,2)]*x(1)+x(2)) / sum([1:size(phi,2)]*x(1)+x(2))
+                sigmaweightedPhi=bsxfun(@rdivide,phifit,sqrt(varProfile))';
+                c=phifit*sigmaweightedPhi;
+                b=((orderProfile)*sigmaweightedPhi)';
+                
+                %setup error
+                ce=phifit*phifit';
+                be=((varProfile-RN^2)*phifit')';
+                
+                %solve
+                fittedValues=c\b;
+                fittedErrors=ce\be;
+                
+                %Model
+                M=sum(bsxfun(@times,phifit,fittedValues),1);
+                
+                chi2=sum(((orderProfile-M)).^2./varProfile)/(size(M,2)-size(fittedValues,1)-length(x));
+            end
+        end
+        
+        function [spectraValues, spectraErrors, background]=MPDoptimalExt(self,dataRows,orderProfile,varProfile,specCenters,specWidth,RN)
+            % Multi-Profile Deconvolution Optimal Extraction as described by Sharp & Birchall (2010)
+            %
+            % paper: Sharp R., Birchall M. N. (2010) Optimal Extraction of Fibre Optic Spectroscopy. PASA 27, pp. 91-103.
+            %        http://dx.doi.org/10.1071/AS08001
+            
+            %setup
+            phi=self.getPhi(dataRows,specCenters,2*log(2)*specWidth,ones(length(specCenters),1));
             sigmaweightedPhi=bsxfun(@rdivide,phi,sqrt(varProfile))';
             c=phi*sigmaweightedPhi;
             b=((orderProfile)*sigmaweightedPhi)';
             
+            %setup error
+            ce=phi*phi';
+            be=((varProfile-RN^2)*phi')';
             
-%             initfittedValues=c\b;
-%             M=orderProfile-sum(bsxfun(@times,phifit,fittedValues),1);
-%             error(' ')
+            %solve
+            spectraValues=c\b;
+            spectraErrors=ce\be;
+            background=zeros(size(orderProfile));
             
-            
-            %[xout,Fval,Exitflag,Output] = fminbnd(@optimizeBackgroundFit,0,0.1);
-            [xout,Fval,Exitflag,Output] = fminsearch(@optimizeBackgroundFit, polyfit(dataRows,orderProfile/sum(orderProfile),2)); %,[],[],[],[],[],[],[],opts
-            
-            %xout=lsqnonlin(@optimizeBackgroundFit,polyfit(dataRows,orderProfile/sum(orderProfile),1),[],[],options);
-            %[xout,Fval,Exitflag,Output] = patternsearch(@optimizeBackgroundFit,polyfit(dataRows,orderProfile/sum(orderProfile),1),...
-            %    [],[],[],[],[],[],[],options);
-            
-            [~, fittedValues, fittedErrors, M]=optimizeBackgroundFit(xout);
-            
-            spectraValues=fittedValues(1:end-1);
-            spectraErrors=fittedErrors(1:end-1);
-            background=fittedValues(20)*polyval(xout,dataRows)/sum(polyval(xout,dataRows));
-            
-            function [sse, fittedValues, fittedErrors, M]=optimizeBackgroundFit(x)
-                %setup
-                %orderProfile=orderProfile-min(orderProfile);
-                %specWidth
-                phifit=[phi; polyval(x,dataRows)/sum(polyval(x,dataRows))];%ones(1,size(phi,2))/size(phi,2) %([1:size(phi,2)]*x(1)+x(2)) / sum([1:size(phi,2)]*x(1)+x(2))
-                sigmaweightedPhi=bsxfun(@rdivide,phifit,sqrt(varProfile))';
-                c=phifit*sigmaweightedPhi;
-                b=((orderProfile)*sigmaweightedPhi)';
-                
-                %setup error
-                ce=phifit*phifit';
-                be=((varProfile-RN^2)*phifit')';
-                
-                %solve
-                fittedValues=c\b;
-                fittedErrors=ce\be;
-                
-                %Model
-                M=sum(bsxfun(@times,phifit,fittedValues),1);
-                
-                sse=sum(((M-orderProfile)).^2./varProfile);
-            end
-            
-            function phi=getPhi(dataRows,specCenters,specWidth,specPeaks)
-                phi1=bsxfun(@minus,repmat(dataRows,[length(specCenters),1]),specCenters);
-                phi2=bsxfun(@rdivide, phi1, specWidth);
-                phi3=bsxfun(@times, exp(-(phi2).^2), 1./(specWidth*sqrt(pi)));
-                phi=bsxfun(@times, phi3, specPeaks);
-                
-                phi(phi<1e-8)=0;
-            end
         end
         
-        function [spectraValues, spectraErrors, background]=MPDoptimalExtFullFit(~,dataRows,orderProfile,varProfile,specCenters,specWidth,RN)
-            % Multi-Profile Deconvolution Optimal Extraction as described by Sharp & Birchall (2010)
-            %
-            % paper: Sharp R., Birchall M. N. (2010) Optimal Extraction of Fibre Optic Spectroscopy. PASA 27, pp. 91-103.
-            %        http://dx.doi.org/10.1071/AS08001
-   
-            phi=getPhi(dataRows,specCenters,2*log(2)*specWidth,[ones(length(specCenters),1)]);
+        function phi=getPhi(~,dataRows,specCenters,specWidth,specPeaks)
+            phi1=bsxfun(@minus,repmat(dataRows,[length(specCenters),1]),specCenters);
+            phi2=bsxfun(@rdivide, phi1, specWidth);
+            phi3=bsxfun(@times, exp(-(phi2).^2), 1./(specWidth*sqrt(pi)));
+            phi=bsxfun(@times, phi3, specPeaks);
             
-            %[xout,Fval,Exitflag,Output] = fminbnd(@optimizeBackgroundFit,0,0.1);
-            [xout,Fval,Exitflag,Output] = fminsearch(@optimizeBackgroundFit, polyfit(dataRows,orderProfile/sum(orderProfile),1)); %,[],[],[],[],[],[],[],opts
-            
-            %xout=lsqnonlin(@optimizeBackgroundFit,polyfit(dataRows,orderProfile/sum(orderProfile),1),[],[],options);
-            %[xout,Fval,Exitflag,Output] = patternsearch(@optimizeBackgroundFit,polyfit(dataRows,orderProfile/sum(orderProfile),1),...
-            %    [],[],[],[],[],[],[],options);
-            
-            [~, fittedValues, fittedErrors, M]=optimizeBackgroundFit(xout);
-            
-            spectraValues=fittedValues(1:end-1);
-            spectraErrors=fittedErrors(1:end-1);
-            background=fittedValues(20)*polyval(xout,dataRows)/sum(polyval(xout,dataRows));
-            
-            function [sse, fittedValues, fittedErrors, M]=optimizeBackgroundFit(x)
-                %setup
-                %orderProfile=orderProfile-min(orderProfile);
-                %specWidth
-                phifit=[phi; polyval(x,dataRows)/sum(polyval(x,dataRows))];%ones(1,size(phi,2))/size(phi,2) %([1:size(phi,2)]*x(1)+x(2)) / sum([1:size(phi,2)]*x(1)+x(2))
-                sigmaweightedPhi=bsxfun(@rdivide,phifit,sqrt(varProfile))';
-                c=phifit*sigmaweightedPhi;
-                b=((orderProfile)*sigmaweightedPhi)';
-                
-                %setup error
-                ce=phifit*phifit';
-                be=((varProfile-RN^2)*phifit')';
-                
-                %solve
-                fittedValues=c\b;
-                fittedErrors=ce\be;
-                
-                %Model
-                M=sum(bsxfun(@times,phifit,fittedValues),1);
-                
-                sse=sum(((M-orderProfile)).^2./varProfile);
-            end
-            
-            function phi=getPhi(dataRows,specCenters,specWidth,specPeaks)
-                phi1=bsxfun(@minus,repmat(dataRows,[length(specCenters),1]),specCenters);
-                phi2=bsxfun(@rdivide, phi1, specWidth);
-                phi3=bsxfun(@times, exp(-(phi2).^2), 1./(specWidth*sqrt(pi)));
-                phi=bsxfun(@times, phi3, specPeaks);
-                
-                phi(phi<1e-8)=0;
-            end
+            phi(phi<1e-8)=0;
         end
     end
     
