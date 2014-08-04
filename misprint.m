@@ -395,7 +395,7 @@ classdef misprint < handleAllHidden
             % fit gaussian to profile in columns for each order.
             fitxs=zeros(numOfOrders,3*numOfFibers+1,length(columns));
             for i=1:length(columns)
-                for order=1:numOfOrders
+                parfor order=1:numOfOrders
                     disp(['Column:' num2str(columns(i)) ' | Fitting Spectra in Order: ' num2str(order)])
                     
                     orderProfileX=round(max(orderEdges(order,i),1):min(orderEdges(order+1,i),self.imdim(1)))';
