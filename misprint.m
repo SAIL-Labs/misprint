@@ -240,7 +240,7 @@ classdef misprint < handleAllHidden
                 if isfield(self.targetHeader,'DISPAXIS')
                     self.dispAxis=self.targetHeader.DISPAXIS;
                 else
-                    self.dispAxis=1; % atik default
+                    self.dispAxis=2; % atik default
                     %if strcmp(self.targetHeader.INSTRUME,'ArtemisHSC')
                     %    fitsAddHeaderKeyword(self.targetPath,'DISPAXIS',self.dispAxis,' ');
                     %end
@@ -248,7 +248,7 @@ classdef misprint < handleAllHidden
             end
             %% load misprint, and orinateate so echelle dispersion is horizontal
             self.imdata=fitsread(self.targetPath);
-            self.dispAxis
+            
             if self.dispAxis==1
                 self.imdata=(self.imdata'); %fliplr
             end
@@ -894,7 +894,7 @@ classdef misprint < handleAllHidden
             %
             % paper: Sharp R., Birchall M. N. (2010) Optimal Extraction of Fibre Optic Spectroscopy. PASA 27, pp. 91-103.
             %        http://dx.doi.org/10.1071/AS08001
-            
+   
             phi=getPhi(dataRows,specCenters,2*log(2)*specWidth,[ones(length(specCenters),1)]);
             
             %[xout,Fval,Exitflag,Output] = fminbnd(@optimizeBackgroundFit,0,0.1);
