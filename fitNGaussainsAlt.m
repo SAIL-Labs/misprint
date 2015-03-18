@@ -1,5 +1,5 @@
 function [peaks,means,widths,xfitted] = fitNGaussainsAlt(N,x,y,peakcut,plotting)
-
+import chrislib.*
 if nargin==4
     plotting=0;
 end
@@ -12,8 +12,12 @@ y=y-mean(y(1:4));
 %y=y-median(y); % median baseline subtracte
 
 minpeakheight=max(y)*peakcut;
-[peakEstimate, peakXInd]=findpeaks(y, 'NPEAKS',N,'MINPEAKDISTANCE',3,'MINPEAKHEIGHT',minpeakheight); %median(y)*1.5
-
+if N==1
+    peakXInd=find(max(y)==y,1,'first');
+    peakEstimate=y(peakXInd);
+else
+    [peakEstimate, peakXInd]=findpeaks(y, 'NPEAKS',N,'MINPEAKDISTANCE',2,'MINPEAKWIDTH',2,'MinPeakProminence',0.1); %median(y)*1.5
+end
 peakPosEstimate=x(peakXInd);
 
 
@@ -24,11 +28,11 @@ options = optimset('Display','off',...
 %    'Algorithm','levenberg-marquardt',...
 
 x0=[peakEstimate' peakPosEstimate' ones(1,N) 0.1];
-xlb=[peakEstimate'*0.8 peakPosEstimate'*0.9 ones(1,N)*0.8 0];
-xub=[peakEstimate'*1.2 peakPosEstimate'*1.1 ones(1,N)*3 0.2];
+xlb=[peakEstimate'*0.8 peakPosEstimate'*0.99 ones(1,N)*0.8 0];
+xub=[peakEstimate'*1.2 peakPosEstimate'*1.01 ones(1,N)*3 0.2];
 
 
-fun = @(co,xData) sum(nGausFunc(co,xData,N),2);
+fun = @(co,xData) sum(misprint.nGausFunc(co,xData,N),2);
 
 [xfitted,resnorm] = lsqcurvefit(fun,x0,x,y,xlb,xub,options);
 
@@ -40,7 +44,7 @@ widths=xfitted(N*2+1:end-1);
 xfitted(end)=xfitted(end)*maxy;
 
 %% checking
-if resnorm > 0.4
+if resnorm > 2
     warning('N gauss fit is not that great, inspect manually')
     plotting=1;
 end
