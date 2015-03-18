@@ -1,3 +1,4 @@
+function prepareFrames
 %preparedframes
 clc; clear all
 
@@ -23,7 +24,7 @@ catch err
         movefile(filenames{i},fullfile(processedfolder,basefilename))
     end
     bias=median(biasdata,3);
-    fitswrite(bias,'master-bias.fit')
+    fitswrite(single(bias),'master-bias.fit')
     catch err
         bias=0;
     end
@@ -41,15 +42,16 @@ for i=1:length(allfilenames)
     try
         header=fitsheader(allfilenames{i});
         exposure(i)=header.EXPOSURE;
-        if strcmpi(header.IMAGETYP,'DARK')
+        if strcmpi(header.IMAGETYP,'DARK') || strcmpi(header.IMAGETYP,'Dark Frame')
             isdark(i)=true;
             %ismaster(i)=true;
         elseif strcmpi(header.IMAGETYP,'MASTDARK')
             ismasterdark(i)=true;
-        elseif strcmpi(header.IMAGETYP,'LIGHT')
+        elseif strcmpi(header.IMAGETYP,'LIGHT') || strcmpi(header.IMAGETYP,'LIGHT Frame')
             islight(i)=true;
         end
     catch
+        allfilenames{i}
         header
     end
 end
@@ -95,7 +97,7 @@ if ~isempty(darkfilename)
             end
             frame=median(frames,3);
             
-            fitswrite(frame,[basefilename '-masterdark.fit'],headercell(8:end,:))
+            fitswrite(single(frame),[basefilename '-masterdark.fit'],headercell(8:end,:))
         end
     end
 else
@@ -108,6 +110,9 @@ for i=1:length(darkfilename)
     header=fitsheader(darkfilename{i});
     darks.(['D' num2str(header.EXPOSURE*100)])=fitsread(darkfilename{i});
 end
+
+%darks.D100=darks.D60;
+
 
 %% prepare light frames
 lightfilename={allfilenames{islight}}';
@@ -137,14 +142,17 @@ if ~isempty(lightfilename)
             headercell=fitstructure2cell(header);
             try
                 clear frame
-                frame=fitsread(lightfilename{i}) - bias - darks.(['D' num2str(header.EXPOSURE*100)]);
-                frame(frame<0)=0;
+                frame=fitsread(lightfilename{i}) - darks.(['D' num2str(header.EXPOSURE*100)]);
+                %frame(frame<0)=0;
                 movefile(lightfilename{i},fullfile(processedfolder,lightfilename{i}(1:end-8)))
-                fitswrite(frame,[lightfilename{i}(1:end-4) '-reduced.fit'],headercell(8:end,:))
+                fitswrite(single(frame),[lightfilename{i}(1:end-4) '-reduced.fit'],headercell(8:end,:))
             
             catch err
-                err
-                warning([lightfilename{i} ': No dark with correct exposure time (probably)'])
+                if strcmpi(err.identifier,'MATLAB:nonExistentField')
+                    warning([lightfilename{i} ': No dark with correct exposure time (probably)'])
+                else
+                    rethrow(err)
+                end
             end
             
             
@@ -163,12 +171,65 @@ for i=1:20
         %movefile(['dark-' num2str(j) '-' num2str(i,'%.3d') '.fit'],['dark-' num2str(j) '-' num2str(i,'%.3d') '-dark.fit'])
         %movefile(['lamp-' num2str(i,'%.3d') '-60.fit'],['lamp-' num2str(i,'%.3d') '.fit'])
     %end
-    movefile(['dark-' num2str(i,'%.3d') 'dark.fit'],['dark-' num2str(i,'%.3d') '-dark.fit'])
+    movefile(['dark-' num2str(i,'%.3d') '.fit'],['dark-' num2str(i,'%.3d') '-dark.fit'])
 end
 
 
 
+return
+%%
 
+for i=1:5
+lightdark(:,:,i)=fitsread(['dark-' num2str(i,'%.3d') 'ld-reduced.fit']);
+end
+
+lightdark=median(lightdark,3);
+
+%%
+for i=1:10
+%     [newsun header]=fitsread(['flat-' num2str(i,'%.3d') '-reduced.fit']);
+%     
+%     header.IMAGETYP='reduced';
+%     headercell=fitstructure2cell(header);
+%     
+%     newsun=newsun-lightdark;
+%     newsun=newsun+abs(min2(newsun));
+%     
+%     fitswrite(newsun,['flat-' num2str(i,'%.3d') '-reduced-final.fit'],headercell(8:end,:))
+    %fitsAddHeaderKeyword(['sun-' num2str(i,'%.3d') '-reduced-final.fit'],'DISPAXIS',1,' ')
+    %fitsAddHeaderKeyword(['dark-' num2str(i,'%.3d') '-ldark.fit'],'IMAGETYP','DARK',' ')
+end
+return
+%%
+for i=1:10
+    movefile(['flat-' num2str(i,'%.3d') 'dark.fit'],['flat-' num2str(i,'%.3d') '-dark.fit'])
+end
+
+%%
+files=dir('*.fit')
+filenames={files.name}';
+filedate=datenum({files.date});
+[~,idx]=sort(filedate);
+filenames=filenames(idx);
+%%
+% for i=1:length(filenames)
+%     movefile(filenames{i},['oops-' num2str(i,'%.3d') '.fit'])
+% end
+% 
+
+for i=1:51
+    imdata(:,:,i)=fitsread(['hene-' num2str(i,'%.3d') '-reduced.fit']);
+end
+%%
+
+
+imdata2=bsxfun(@minus,imdata,median(imdata,3));
+imdata2(imdata2<0)=0;
+%%
+imagesc(sum(imdata2,3))
+%%
+fitswrite(max(imdata2,[],3),'maxCombhene.fit')
+fitswrite(sum(imdata2,3),'sumCombhene.fit')
 
 
 
