@@ -5,10 +5,11 @@ function autoimprovewavelength(varargin)
     if ~isempty(varargin)
         filename=varargin{1};
     else
-        filename='arc-001-reduced-1D-spectra';
+        filename='sun-reduced-corrected-1D-spectra';%'arc-001-reduced-1D-spectra';
     end
     
-    spectra=(fitsread([filename '.fits']));
+    spectra=fliplr(fitsread([filename '.fits']));
+    spectra=permute(spectra,[3 2 1]);
     
     if length(varargin)==2
         newspectra(1,:,:)=spectra';
@@ -20,6 +21,9 @@ function autoimprovewavelength(varargin)
     for or=1:numOrders
         spectra(:,:,or)=bsxfun(@rdivide,spectra(:,:,or),max(spectra(:,:,or)')');
     end
+    spectra=1-spectra;
+    %specininter(1,:,:)=spectra';
+    %spectra=specininter;
     
     spectra(isnan(spectra))=0;
     try
@@ -28,10 +32,10 @@ function autoimprovewavelength(varargin)
         
         for o=1:numOrders
             matpayload=load([filename '-ref-points-order' num2str(o) '.mat']);
-            p(1,:,o)=matpayload.p;
+            pin(1,:,o)=matpayload.p;
             xDatainit(o)={matpayload.xData};
             xRef(o)={matpayload.xRef};
-            wavefit(1,:,o)=polyval(p(1,:,o),1:size(spectra,2));
+            wavefit(1,:,o)=polyval(pin(1,:,o),1:size(spectra,2));
         end
         
         
@@ -43,13 +47,13 @@ function autoimprovewavelength(varargin)
                 shift(fibre,:, order)=Info(fibre).BestShift;
             end
         end
+        %error(' ')
+        avgshift=median(shift,3)
         
-        avgshift=median(shift,3);
-        
-        
+        %error(' ')
         %% find centroids of xref
         
-        win=6;
+        win=10;
         for o=1:numOrders;
             for f=1:size(spectra,1);
                 disp(['Order: ' num2str(o) '  Fiber: ' num2str(f)]);
@@ -80,14 +84,14 @@ function autoimprovewavelength(varargin)
                         
                         if gof.rsquare<0.80
                             usemask(i)=false;
-                            %                                         figure(1);clf
-                            %                                         plot(cf_,x,xzoomprofile,'-x')
-                            %                                         hold all
-                            %                                         plot(xfit(i),a(a==max(a)),'*')
-                            %                                         hold off
-                            %                         cf_
-                            %                         gof
-                            %                         pause;
+                            figure(1);clf
+                            plot(cf_,x,xzoomprofile,'-x')
+                            hold all
+                            plot(xfit(i),a(a==max(a)),'*')
+                            hold off
+                            cf_
+                            gof
+                            pause;
                         end
                     catch err
                         err
@@ -101,8 +105,13 @@ function autoimprovewavelength(varargin)
             end
         end
         
+        p=permute(p,[3 2 1]);
+        S=permute(S,[3 2 1]);
+        mu=permute(mu,[3 2 1]);
+        
         save([filename '-autoFittedWave.mat'],'p','S','mu','shift','avgshift')
     end
+    
     return
     %%
     

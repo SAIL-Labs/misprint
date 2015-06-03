@@ -16,7 +16,7 @@ if N==1
     peakXInd=find(max(y)==y,1,'first');
     peakEstimate=y(peakXInd);
 else
-    [peakEstimate, peakXInd]=findpeaks(y, 'NPEAKS',N,'MINPEAKDISTANCE',2,'MINPEAKWIDTH',2,'MinPeakProminence',0.1); %median(y)*1.5
+    [peakEstimate, peakXInd]=findpeaks(y, 'NPEAKS',N,'MINPEAKDISTANCE',2,'MINPEAKWIDTH',1)%,'MinPeakProminence',0.1); %median(y)*1.5
 end
 peakPosEstimate=x(peakXInd);
 
@@ -28,7 +28,7 @@ options = optimset('Display','off',...
 %    'Algorithm','levenberg-marquardt',...
 
 x0=[peakEstimate' peakPosEstimate' ones(1,N) 0.1];
-xlb=[peakEstimate'*0.8 peakPosEstimate'*0.99 ones(1,N)*0.8 0];
+xlb=[peakEstimate'*0.8 peakPosEstimate'*0.99 ones(1,N)*0 0];
 xub=[peakEstimate'*1.2 peakPosEstimate'*1.01 ones(1,N)*3 0.2];
 
 
