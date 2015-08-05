@@ -98,6 +98,7 @@ classdef misprint < handleAllHidden
         
         treatFibresAsOrders, % allows for overalping orders, ie AWG spectra
         
+        badpixelmask,
         
         OXmethod, % name of method to use for the optimal extraction.
     end
@@ -492,6 +493,7 @@ classdef misprint < handleAllHidden
         end
         
         function getMaskForIncompleteOrders(self)
+            
             %  get mask for incomplete orders
             
             if ~self.needsMask
@@ -548,6 +550,30 @@ classdef misprint < handleAllHidden
                 imagesc(self.imdata.*self.mask)
             end
         end
+        
+        function getBadPixelMask(self)
+            try
+                matpayload=load(self.spectraTracePath,'badpixel');
+                badpixel=matpayload.badpixel;
+            catch err
+                if self.useReference
+                    imdatafilt=medfilt2(self.flatImdata,[1 5]);
+                    diffimage=self.flatImdata-imdatafilt;
+                    badpixel=abs(diffimage-mean2(diffimage)) > std2(diffimage)*3;
+                    %save(self.spectraTracePath,'badpixel','-append')
+                else
+                    imdatafilt=medfilt2(self.imdata,[1 5]);
+                    diffimage=self.imdata-imdatafilt;
+                    badpixel=abs(diffimage-mean2(diffimage)) > std2(diffimage)*3;
+                end
+            end
+            self.badpixelmask=badpixel;
+            %sum(badpixel(:))
+            self.imdata(self.badpixelmask)=NaN;
+            %self.imdata(self.imdata<0)=NaN;
+            self.imdata=inpaint_nans(self.imdata,3);
+        end
+        
         
         function getP2PVariationsAndBlaze(self,varargin)
             % get smoothed version of flat spectrum (ie blaze) and pixel to
@@ -998,13 +1024,13 @@ classdef misprint < handleAllHidden
                 
                 fitswrite(spectraValues,self.SpectraFitsSaveFileName,spectra1DHDR.cards)
                 fitswrite(spectraVar,self.SpectraFitsSaveFileName,'writemode','append')
-                %fitswrite(backgroundValues,self.SpectraFitsSaveFileName,'writemode','append')
+                fitswrite(backgroundValues,self.SpectraFitsSaveFileName,'writemode','append')
             else
                 disp(['Pre-existing extraction data found at: ' self.SpectraFitsSaveFileName])
                 
                 spectraValues=fitsread(self.SpectraFitsSaveFileName);
                 spectraVar=fitsread(self.SpectraFitsSaveFileName,'image',1);
-                %backgroundValues=fitsread(self.SpectraFitsSaveFileName,'image',2);
+                backgroundValues=fitsread(self.SpectraFitsSaveFileName,'image',2);
             end
             if self.treatFibresAsOrders
                 warning(' ')
@@ -1019,7 +1045,7 @@ classdef misprint < handleAllHidden
                 self.spectraValues=spectraValues;
                 self.spectraVar=spectraVar;
             end
-            %self.backgroundValues=backgroundValues;
+            self.backgroundValues=backgroundValues;
         end
         
         function [spectraValues, spectraErrors, background, chi2]=MPDoptimalExtBack(self,dataRows,orderProfile,varProfile,specCenters,specWidth,RN)
@@ -1089,6 +1115,7 @@ classdef misprint < handleAllHidden
             %             phi3=
             spectraValues=zeros(size(specCenters'));
             spectraErrors=spectraValues;
+            background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
             for col=1:size(specCenters,1)
                 phi=bsxfun(@times, exp(-(bsxfun(@rdivide, bsxfun(@minus,repmat(dataRows{col},...
                     [self.numOfFibers,1]),specCenters(col,:)'), specWidth(col,:)')).^2), 1./(specWidth(col,:)'*sqrt(pi)));
@@ -1112,13 +1139,71 @@ classdef misprint < handleAllHidden
                 be=((varProfile{col}-RN^2)*phi')';
                 
                 %solve
-                spectraValues(:,col)=(c\b);
+                spec=(c\b);
+                spectraValues(:,col)=spec;
                 %spectraValues=linsolve(c,b);
-                spectraErrors(:,col)=(ce\be);
+                errors=ce\be;
+                spectraErrors(:,col)=errors;
+                %background{col}=zeros(size(orderProfile{col}))+spec(end);
                 %spectraErrors=linsolve(ce,be);
                 %assert(~(col==400))
             end
+            %background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
+            spectraValues(spectraValues<0)=0;
+            
+        end
+        
+        function [spectraValues, spectraErrors, background]=MPDoptimalExtDCBack(self,dataRows,orderProfile,varProfile,specCenters,specWidth,RN)
+            % Multi-Profile Deconvolution Optimal Extraction as described by Sharp & Birchall (2010)
+            %
+            % paper: Sharp R., Birchall M. N. (2010) Optimal Extraction of Fibre Optic Spectroscopy. PASA 27, pp. 91-103.
+            %        http://dx.doi.org/10.1071/AS08001
+            
+            %setup
+            %             if 0
+            %                 phi=self.getPhi(dataRows,specCenters,specWidth,ones(length(specCenters),1));
+            %             %%phi
+            %             else
+            %             phi1=;
+            %             phi2=;
+            %             phi3=
+            spectraValues=zeros(size(specCenters'));
+            spectraErrors=spectraValues;
             background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
+            for col=1:size(specCenters,1)
+                phi=bsxfun(@times, exp(-(bsxfun(@rdivide, bsxfun(@minus,repmat(dataRows{col},...
+                    [self.numOfFibers,1]),specCenters(col,:)'), specWidth(col,:)')).^2), 1./(specWidth(col,:)'*sqrt(pi)));
+                %phi=bsxfun(@times, phi4, specPeaks);
+                %phi=sparse(phi);
+                phi=[phi; ones(1,size(phi,2))];
+                phi(phi<1e-6)=0;
+                %             end
+                
+                %            if 1
+                varweightedPhi=bsxfun(@rdivide,phi,varProfile{col})';
+                c=phi*varweightedPhi;
+                b=((orderProfile{col})*varweightedPhi)';
+                %             else
+                %                 sigmaweightedPhi=bsxfun(@rdivide,phi,sqrt(varProfile))';
+                %                 c=mtimesx(phi,sigmaweightedPhi,'MATLAB');
+                %                 b=mtimesx(orderProfile,sigmaweightedPhi,'MATLAB')';
+                %             end
+                
+                %setup error
+                ce=phi*phi';
+                be=((varProfile{col}-RN^2)*phi')';
+                
+                %solve
+                spec=(c\b);
+                spectraValues(:,col)=spec(1:end-1);
+                %spectraValues=linsolve(c,b);
+                errors=ce\be;
+                spectraErrors(:,col)=errors(1:end-1);
+                background{col}=zeros(size(orderProfile{col}))+spec(end);
+                %spectraErrors=linsolve(ce,be);
+                %assert(~(col==400))
+            end
+            %background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
             spectraValues(spectraValues<0)=0;
             
         end
@@ -1194,8 +1279,8 @@ classdef misprint < handleAllHidden
             spectraErrors=spectraValues;
             for col=1:size(specCenters,1)
 %                assert(~(col==300))
-                spectraValues(:,col)=sum(orderProfile{col}(round([-specWidth(col)*4:specWidth(col)*4]+self.meanOrderWidth/2)));
-                spectraErrors(:,col)=sum(varProfile{col}(round([-specWidth(col)*4:specWidth(col)*4]++self.meanOrderWidth/2)));
+                spectraValues(:,col)=sum(orderProfile{col}(round([-specWidth(col)*2:specWidth(col)*2]+self.meanOrderWidth/2)));
+                spectraErrors(:,col)=sum(varProfile{col}(round([-specWidth(col)*2:specWidth(col)*2]++self.meanOrderWidth/2)));
             end
             
             background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
@@ -1313,10 +1398,9 @@ classdef misprint < handleAllHidden
     methods (Static)
         [specCenters, p, mu]=polyfitwork(imdim,means,column,polyorder,offset,plotalot)
         prepareFrames
-        [peaks,means,widths,xfitted] = fitNGaussainsAlt(N,x,y,peakcut,plotting,peakXInd)
+        [peaks,means,widths,xfitted] = fitNGaussainsAlt(N,x,y,peakcut,plotting)
         out=nGausFunc(x,xData,N)
         wavecalGUI
         autoimprovewavelength(varargin)
-
     end
 end

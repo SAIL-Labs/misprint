@@ -8,7 +8,7 @@ y(y<=0)=[];
 maxy=max(y);
 y=y/maxy;
 
-%y=y-mean(y(1:4));
+y=y-min(y);
 %y=y-median(y); % median baseline subtracte
 
 minpeakheight=max(y)*peakcut;
@@ -16,7 +16,7 @@ if N==1
     peakXInd=find(max(y)==y,1,'first');
     peakEstimate=y(peakXInd);
 else
-    [peakEstimate, peakXInd]=findpeaks(y, 'NPEAKS',N,'MINPEAKDISTANCE',2,'MINPEAKHEIGHT',minpeakheight);%,'MinPeakProminence',0.1); %median(y)*1.5
+    [peakEstimate, peakXInd]=findpeaks(y, 'NPEAKS',N,'MINPEAKDISTANCE',4,'MINPEAKHEIGHT',minpeakheight); %median(y)*1.5
 end
 peakPosEstimate=x(peakXInd);
 
