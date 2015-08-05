@@ -493,6 +493,7 @@ classdef misprint < handleAllHidden
         end
         
         function getMaskForIncompleteOrders(self)
+            
             %  get mask for incomplete orders
             
             if ~self.needsMask
@@ -1023,13 +1024,13 @@ classdef misprint < handleAllHidden
                 
                 fitswrite(spectraValues,self.SpectraFitsSaveFileName,spectra1DHDR.cards)
                 fitswrite(spectraVar,self.SpectraFitsSaveFileName,'writemode','append')
-                %fitswrite(backgroundValues,self.SpectraFitsSaveFileName,'writemode','append')
+                fitswrite(backgroundValues,self.SpectraFitsSaveFileName,'writemode','append')
             else
                 disp(['Pre-existing extraction data found at: ' self.SpectraFitsSaveFileName])
                 
                 spectraValues=fitsread(self.SpectraFitsSaveFileName);
                 spectraVar=fitsread(self.SpectraFitsSaveFileName,'image',1);
-                %backgroundValues=fitsread(self.SpectraFitsSaveFileName,'image',2);
+                backgroundValues=fitsread(self.SpectraFitsSaveFileName,'image',2);
             end
             if self.treatFibresAsOrders
                 warning(' ')
@@ -1044,7 +1045,7 @@ classdef misprint < handleAllHidden
                 self.spectraValues=spectraValues;
                 self.spectraVar=spectraVar;
             end
-            %self.backgroundValues=backgroundValues;
+            self.backgroundValues=backgroundValues;
         end
         
         function [spectraValues, spectraErrors, background, chi2]=MPDoptimalExtBack(self,dataRows,orderProfile,varProfile,specCenters,specWidth,RN)
@@ -1114,6 +1115,7 @@ classdef misprint < handleAllHidden
             %             phi3=
             spectraValues=zeros(size(specCenters'));
             spectraErrors=spectraValues;
+            background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
             for col=1:size(specCenters,1)
                 phi=bsxfun(@times, exp(-(bsxfun(@rdivide, bsxfun(@minus,repmat(dataRows{col},...
                     [self.numOfFibers,1]),specCenters(col,:)'), specWidth(col,:)')).^2), 1./(specWidth(col,:)'*sqrt(pi)));
@@ -1137,13 +1139,71 @@ classdef misprint < handleAllHidden
                 be=((varProfile{col}-RN^2)*phi')';
                 
                 %solve
-                spectraValues(:,col)=(c\b);
+                spec=(c\b);
+                spectraValues(:,col)=spec;
                 %spectraValues=linsolve(c,b);
-                spectraErrors(:,col)=(ce\be);
+                errors=ce\be;
+                spectraErrors(:,col)=errors;
+                %background{col}=zeros(size(orderProfile{col}))+spec(end);
                 %spectraErrors=linsolve(ce,be);
                 %assert(~(col==400))
             end
+            %background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
+            spectraValues(spectraValues<0)=0;
+            
+        end
+        
+        function [spectraValues, spectraErrors, background]=MPDoptimalExtDCBack(self,dataRows,orderProfile,varProfile,specCenters,specWidth,RN)
+            % Multi-Profile Deconvolution Optimal Extraction as described by Sharp & Birchall (2010)
+            %
+            % paper: Sharp R., Birchall M. N. (2010) Optimal Extraction of Fibre Optic Spectroscopy. PASA 27, pp. 91-103.
+            %        http://dx.doi.org/10.1071/AS08001
+            
+            %setup
+            %             if 0
+            %                 phi=self.getPhi(dataRows,specCenters,specWidth,ones(length(specCenters),1));
+            %             %%phi
+            %             else
+            %             phi1=;
+            %             phi2=;
+            %             phi3=
+            spectraValues=zeros(size(specCenters'));
+            spectraErrors=spectraValues;
             background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
+            for col=1:size(specCenters,1)
+                phi=bsxfun(@times, exp(-(bsxfun(@rdivide, bsxfun(@minus,repmat(dataRows{col},...
+                    [self.numOfFibers,1]),specCenters(col,:)'), specWidth(col,:)')).^2), 1./(specWidth(col,:)'*sqrt(pi)));
+                %phi=bsxfun(@times, phi4, specPeaks);
+                %phi=sparse(phi);
+                phi=[phi; ones(1,size(phi,2))];
+                phi(phi<1e-6)=0;
+                %             end
+                
+                %            if 1
+                varweightedPhi=bsxfun(@rdivide,phi,varProfile{col})';
+                c=phi*varweightedPhi;
+                b=((orderProfile{col})*varweightedPhi)';
+                %             else
+                %                 sigmaweightedPhi=bsxfun(@rdivide,phi,sqrt(varProfile))';
+                %                 c=mtimesx(phi,sigmaweightedPhi,'MATLAB');
+                %                 b=mtimesx(orderProfile,sigmaweightedPhi,'MATLAB')';
+                %             end
+                
+                %setup error
+                ce=phi*phi';
+                be=((varProfile{col}-RN^2)*phi')';
+                
+                %solve
+                spec=(c\b);
+                spectraValues(:,col)=spec(1:end-1);
+                %spectraValues=linsolve(c,b);
+                errors=ce\be;
+                spectraErrors(:,col)=errors(1:end-1);
+                background{col}=zeros(size(orderProfile{col}))+spec(end);
+                %spectraErrors=linsolve(ce,be);
+                %assert(~(col==400))
+            end
+            %background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
             spectraValues(spectraValues<0)=0;
             
         end
