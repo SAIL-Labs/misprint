@@ -1279,8 +1279,8 @@ classdef misprint < handleAllHidden
             spectraErrors=spectraValues;
             for col=1:size(specCenters,1)
 %                assert(~(col==300))
-                spectraValues(:,col)=sum(orderProfile{col}(round([-specWidth(col)*4:specWidth(col)*4]+self.meanOrderWidth/2)));
-                spectraErrors(:,col)=sum(varProfile{col}(round([-specWidth(col)*4:specWidth(col)*4]++self.meanOrderWidth/2)));
+                spectraValues(:,col)=sum(orderProfile{col}(round([-specWidth(col)*2:specWidth(col)*2]+self.meanOrderWidth/2)));
+                spectraErrors(:,col)=sum(varProfile{col}(round([-specWidth(col)*2:specWidth(col)*2]++self.meanOrderWidth/2)));
             end
             
             background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
@@ -1398,10 +1398,9 @@ classdef misprint < handleAllHidden
     methods (Static)
         [specCenters, p, mu]=polyfitwork(imdim,means,column,polyorder,offset,plotalot)
         prepareFrames
-        [peaks,means,widths,xfitted] = fitNGaussainsAlt(N,x,y,peakcut,plotting,peakXInd)
+        [peaks,means,widths,xfitted] = fitNGaussainsAlt(N,x,y,peakcut,plotting)
         out=nGausFunc(x,xData,N)
         wavecalGUI
         autoimprovewavelength(varargin)
-
     end
 end
