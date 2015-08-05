@@ -98,6 +98,7 @@ classdef misprint < handleAllHidden
         
         treatFibresAsOrders, % allows for overalping orders, ie AWG spectra
         
+        badpixelmask,
         
         OXmethod, % name of method to use for the optimal extraction.
     end
@@ -548,6 +549,30 @@ classdef misprint < handleAllHidden
                 imagesc(self.imdata.*self.mask)
             end
         end
+        
+        function getBadPixelMask(self)
+            try
+                matpayload=load(self.spectraTracePath,'badpixel');
+                badpixel=matpayload.badpixel;
+            catch err
+                if self.useReference
+                    imdatafilt=medfilt2(self.flatImdata,[1 5]);
+                    diffimage=self.flatImdata-imdatafilt;
+                    badpixel=abs(diffimage-mean2(diffimage)) > std2(diffimage)*3;
+                    %save(self.spectraTracePath,'badpixel','-append')
+                else
+                    imdatafilt=medfilt2(self.imdata,[1 5]);
+                    diffimage=self.imdata-imdatafilt;
+                    badpixel=abs(diffimage-mean2(diffimage)) > std2(diffimage)*3;
+                end
+            end
+            self.badpixelmask=badpixel;
+            %sum(badpixel(:))
+            self.imdata(self.badpixelmask)=NaN;
+            %self.imdata(self.imdata<0)=NaN;
+            self.imdata=inpaint_nans(self.imdata,3);
+        end
+        
         
         function getP2PVariationsAndBlaze(self,varargin)
             % get smoothed version of flat spectrum (ie blaze) and pixel to
