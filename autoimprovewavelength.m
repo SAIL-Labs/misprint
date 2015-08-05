@@ -29,8 +29,8 @@ function autoimprovewavelength(varargin)
     try
         load([filename '-autoFittedWave.mat '])
     catch err
-        
-        for o=1:numOrders
+        orders=[2:4];%1:numOrders;
+        for o=orders
             matpayload=load([filename '-ref-points-order' num2str(o) '.mat']);
             pin(1,:,o)=matpayload.p;
             xDatainit(o)={matpayload.xData};
@@ -39,7 +39,7 @@ function autoimprovewavelength(varargin)
         end
         
         
-        for order=1:numOrders
+        for order=orders
             IN1=spectra(1,:,order)/max(spectra(1,:,order));
             for fibre=[1:size(spectra,1)]
                 IN2=spectra(fibre,:,order)/max(spectra(fibre,:,order));
@@ -54,7 +54,7 @@ function autoimprovewavelength(varargin)
         %% find centroids of xref
         
         win=10;
-        for o=1:numOrders;
+        for o=orders
             for f=1:size(spectra,1);
                 disp(['Order: ' num2str(o) '  Fiber: ' num2str(f)]);
                 dataspectra=spectra(f,:,o);

@@ -58,7 +58,7 @@ classdef misprint < handleAllHidden
         flatImdata,
         
         
-        spectraValues,      % extracted spectra values.
+        spectraValues,      % extracted spectra values (fibres, data, orders).
         spectraVar,         % var for extracted spec values.
         backgroundValues,   % background value from extraction
         
@@ -96,6 +96,9 @@ classdef misprint < handleAllHidden
         minPeakSeperation,  % min peak seperation for tracing and peakfinder
         peakcut,            % MINPEAKHEIGHT for spectra tracing detection. (fraction of mean of current profile).
         
+        treatFibresAsOrders, % allows for overalping orders, ie AWG spectra
+        
+        
         OXmethod, % name of method to use for the optimal extraction.
     end
     
@@ -117,16 +120,18 @@ classdef misprint < handleAllHidden
             parser.addParamValue('numOfFibers', 19, @(x) isnumeric(x));
             parser.addParamValue('usecurrentfolderonly',false, @(x) islogical(x));
             parser.addParamValue('peakcut', 0.8, @(x) isnumeric(x));
-            parser.addParamValue('parallel',true, @(x) islogical(x));
+            parser.addParamValue('parallel',false, @(x) islogical(x));
             parser.addParamValue('numTraceCol', 10, @(x) isnumeric(x));
             parser.addParamValue('dispAxis', [], @(x) isnumeric(x));
             parser.addParamValue('wavesolution', '', @(x) ischar(x));
-            parser.addParamValue('minPeakSeperation', 3, @(x) isnumeric(x));
+            parser.addParamValue('minPeakSeperation', 8, @(x) isnumeric(x));
             parser.addParamValue('firstCol', 0, @(x) isnumeric(x));
             parser.addParamValue('lastCol', 0, @(x) isnumeric(x));
             parser.addParamValue('clipping',[0 0 0 0], @(x) isnumeric(x) && length(x)==4);
             parser.addParamValue('OXmethod','MPDoptimalExtBack', @(x) ismethod(self,x));
             parser.addParamValue('orderWidth',[], @(x) isnumeric(x));
+            parser.addParamValue('treatFibresAsOrders',false, @(x) islogical(x));
+            
             
             parser.parse(targetBaseFilename,varargin{:});
             
@@ -154,6 +159,7 @@ classdef misprint < handleAllHidden
             self.OXmethod=parser.Results.OXmethod;
             
             self.meanOrderWidth=parser.Results.orderWidth;
+            self.treatFibresAsOrders=parser.Results.treatFibresAsOrders;
             
             %% start matlabpool if parallel computing tool box avaliable
             if self.parallel
@@ -244,7 +250,7 @@ classdef misprint < handleAllHidden
                 if isfield(self.targetHeader,'DISPAXIS')
                     self.dispAxis=self.targetHeader.DISPAXIS;
                 else
-                    self.dispAxis=1; % atik default
+                    self.dispAxis=2; % atik default
                     %if strcmp(self.targetHeader.INSTRUME,'ArtemisHSC')
                     %    fitsAddHeaderKeyword(self.targetPath,'DISPAXIS',self.dispAxis,' ');
                     %end
@@ -290,6 +296,10 @@ classdef misprint < handleAllHidden
                 self.firstCol=20;
             end
             
+            if self.treatFibresAsOrders && (self.numOfOrders>1)
+                assert(~(self.treatFibresAsOrders & (self.numOfOrders>1)),...
+                    'MISPRINT:init:treatFibresAsOrdersWithMutipleOrders','Can not treat fibres as orders when mutiple orders are set.')
+            end
             %% load wavelength solution if supplied
             if ~isempty(parser.Results.wavesolution)
                 self.wavematfile=parser.Results.wavesolution;
@@ -345,7 +355,7 @@ classdef misprint < handleAllHidden
                     
                     assert(~(self.useReference & ~exist(self.spectraTracePath,'file')),...
                         'MISPRINT:traceSpectra:ReferecnceTraceFileNotFound',...
-                        [self.spectraTracePath ' was not found and is required as a reference. Aborting extraction.'])
+                        [self.spectraTracePath ' was not found and is required as a reference. Aborting.'])
                     
                     load(self.spectraTracePath,'specCenters','specWidth','orderWidth','orderEdges','means','columns','widths','fitxs')
                     
@@ -430,11 +440,11 @@ classdef misprint < handleAllHidden
                 %                     hold off
                 %                 end
             end
-            
+            %error(' ')
             %% trace orders
             % fit gaussian to profile in columns for each order.
             fitxs=zeros(numOfOrders,3*numOfFibers+1,length(columns));
-            parfor i=1:length(columns)
+            for i=1:length(columns)
                 for order=1:numOfOrders
                     disp(['Column:' num2str(columns(i)) ' | Fitting Spectra in Order: ' num2str(order)])
                     
@@ -456,11 +466,12 @@ classdef misprint < handleAllHidden
                             orderProfileX,orderProfile,'-')
                         title(['Order: ' num2str(order) ' Column: ' num2str(columns(i))])
                         %pause(0.1)
+                        drawnow
                     end
                 end
             end
             
-            specCenters=self.polyfitwork(self.imdim,means,columns,3);
+            specCenters=self.polyfitwork(self.imdim,means,columns,2);
             specWidth=self.polyfitwork(self.imdim,widths,columns,3);
             meanSpecWidth=squeeze(mean(self.specWidth,3));
             
@@ -657,7 +668,7 @@ classdef misprint < handleAllHidden
             end
         end
         
-        function plotSpectraValuesFor(self,orders,shouldFlat,shouldP2PV)
+        function plotSpectraValuesFor(self,orders,shouldFlat,shouldP2PV,xlimits,ylimits)
             % plot spectra orders specifed. three arguments orders,shouldFlat,shouldP2PV
             
             if shouldFlat && shouldP2PV
@@ -685,22 +696,27 @@ classdef misprint < handleAllHidden
                     %set(gca, 'CLim',[0 1000])
                     ylim([min2(squeeze(self.specCenters(order,:,:)))-50 max2(squeeze(self.specCenters(order,:,:)))+50])
                     hold on
-                    plot(1:self.imdim(2),squeeze(self.specCenters(order,:,:)),'LineWidth',5)
+                    plot(1:self.imdim(2),squeeze(self.specCenters(order,:,:)),'LineWidth',1)
                     %axis image
                     xlabel('Detector Column')
                     ylabel('Detector Row')
                     
                     p(2).select();
                     for f=1:self.numOfFibers
-                        FlattenedSpectraNorm(f,:,order)=FlattenedSpectra(f,:,order)/(max2(FlattenedSpectra(f,:,order)));
+                        FlattenedSpectraNorm(f,:,order)=FlattenedSpectra(f,:,order)/(max2(FlattenedSpectra(f,120:220,order)));
                         plot(1:self.imdim(2),FlattenedSpectraNorm(f,:,order)+(self.numOfFibers-f)*1)
                         hold all
                     end
+                    %ylim([0 max([FlattenedSpectraNorm(:)*1.01; 2^14])]);
+                    ylim(ylimits)
+                    xlim(xlimits)
+                    hold off
+                    grid on
+                    xlabel('Detector Column')
+                    ylabel('Normalised Intenisty')
                 end
-                hold off
-                grid on
-                xlabel('Detector Column')
-                ylabel('Normalised Intenisty')
+
+                
             else
                 for order=orders
                     figure(order);clf;
@@ -990,8 +1006,19 @@ classdef misprint < handleAllHidden
                 spectraVar=fitsread(self.SpectraFitsSaveFileName,'image',1);
                 %backgroundValues=fitsread(self.SpectraFitsSaveFileName,'image',2);
             end
-            self.spectraValues=spectraValues;
-            self.spectraVar=spectraVar;
+            if self.treatFibresAsOrders
+                warning(' ')
+               self.spectraValues(1,:,:)=permute(spectraValues,[2 1]);
+               self.spectraVar(1,:,:)=permute(spectraVar,[2,1]);
+               
+               self.specCenters=permute(self.specCenters,[2 1 3]);
+               
+               self.numOfOrders=self.numOfFibers;
+               self.numOfFibers=1;
+            else
+                self.spectraValues=spectraValues;
+                self.spectraVar=spectraVar;
+            end
             %self.backgroundValues=backgroundValues;
         end
         
@@ -1089,9 +1116,10 @@ classdef misprint < handleAllHidden
                 %spectraValues=linsolve(c,b);
                 spectraErrors(:,col)=(ce\be);
                 %spectraErrors=linsolve(ce,be);
-                
+                %assert(~(col==400))
             end
             background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
+            spectraValues(spectraValues<0)=0;
             
         end
         
@@ -1165,9 +1193,11 @@ classdef misprint < handleAllHidden
             spectraValues=zeros(size(specCenters'));
             spectraErrors=spectraValues;
             for col=1:size(specCenters,1)
-                spectraValues(:,col)=sum(orderProfile{col}(round([-specWidth(col)*3:specWidth(col)*3]+self.meanOrderWidth/2)));
-                spectraErrors(:,col)=sum(varProfile{col}(round([-specWidth(col)*3:specWidth(col)*3]++self.meanOrderWidth/2)));
+%                assert(~(col==300))
+                spectraValues(:,col)=sum(orderProfile{col}(round([-specWidth(col)*4:specWidth(col)*4]+self.meanOrderWidth/2)));
+                spectraErrors(:,col)=sum(varProfile{col}(round([-specWidth(col)*4:specWidth(col)*4]++self.meanOrderWidth/2)));
             end
+            
             background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
             
         end
@@ -1283,9 +1313,10 @@ classdef misprint < handleAllHidden
     methods (Static)
         [specCenters, p, mu]=polyfitwork(imdim,means,column,polyorder,offset,plotalot)
         prepareFrames
-        [peaks,means,widths,xfitted] = fitNGaussainsAlt(N,x,y,peakcut,plotting)
+        [peaks,means,widths,xfitted] = fitNGaussainsAlt(N,x,y,peakcut,plotting,peakXInd)
         out=nGausFunc(x,xData,N)
         wavecalGUI
         autoimprovewavelength(varargin)
+
     end
 end

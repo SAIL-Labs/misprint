@@ -211,11 +211,13 @@ filenames={files.name}';
 filedate=datenum({files.date});
 [~,idx]=sort(filedate);
 filenames=filenames(idx);
-%%
-% for i=1:length(filenames)
-%     movefile(filenames{i},['oops-' num2str(i,'%.3d') '.fit'])
-% end
-% 
+
+dirFilenames('HD153135*.fit')
+
+for i=1:length(filenames)
+    movefile(filenames{i},['oops-' num2str(i,'%.3d') '.fit'])
+end
+
 
 for i=1:51
     imdata(:,:,i)=fitsread(['hene-' num2str(i,'%.3d') '-reduced.fit']);
@@ -233,7 +235,12 @@ fitswrite(sum(imdata2,3),'sumCombhene.fit')
 
 
 
+%%
 
+filenames=dirFilenames('*-dark30.fit')
 
-
+for i=1:length(filenames)
+    %disp(['oops-' num2str(i,'%.3d') '.fit'])
+    movefile(filenames{i},['oops-' num2str(i,'%.3d') '-dark.fit'])
+end
 

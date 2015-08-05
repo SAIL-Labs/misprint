@@ -1,4 +1,4 @@
-function [peaks,means,widths,xfitted] = fitNGaussainsAlt(N,x,y,peakcut,plotting)
+function [peaks,means,widths,xfitted] = fitNGaussainsAlt(N,x,y,peakcut,plotting,peakXInd)
 import chrislib.*
 if nargin==4
     plotting=0;
@@ -8,7 +8,7 @@ y(y<=0)=[];
 maxy=max(y);
 y=y/maxy;
 
-y=y-mean(y(1:4));
+%y=y-mean(y(1:4));
 %y=y-median(y); % median baseline subtracte
 
 minpeakheight=max(y)*peakcut;
@@ -16,7 +16,7 @@ if N==1
     peakXInd=find(max(y)==y,1,'first');
     peakEstimate=y(peakXInd);
 else
-    [peakEstimate, peakXInd]=findpeaks(y, 'NPEAKS',N,'MINPEAKDISTANCE',2,'MINPEAKWIDTH',1)%,'MinPeakProminence',0.1); %median(y)*1.5
+    [peakEstimate, peakXInd]=findpeaks(y, 'NPEAKS',N,'MINPEAKDISTANCE',2,'MINPEAKHEIGHT',minpeakheight);%,'MinPeakProminence',0.1); %median(y)*1.5
 end
 peakPosEstimate=x(peakXInd);
 
@@ -30,7 +30,6 @@ options = optimset('Display','off',...
 x0=[peakEstimate' peakPosEstimate' ones(1,N) 0.1];
 xlb=[peakEstimate'*0.8 peakPosEstimate'*0.99 ones(1,N)*0 0];
 xub=[peakEstimate'*1.2 peakPosEstimate'*1.01 ones(1,N)*3 0.2];
-
 
 fun = @(co,xData) sum(misprint.nGausFunc(co,xData,N),2);
 
