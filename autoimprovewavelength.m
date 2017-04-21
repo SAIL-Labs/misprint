@@ -2,14 +2,16 @@
 function autoimprovewavelength(varargin)
     import chrislib.fitting.*
     
+    fibreToUse=10;
+    
     if ~isempty(varargin)
         filename=varargin{1};
     else
         filename='sun-reduced-corrected-1D-spectra';%'arc-001-reduced-1D-spectra';
     end
     
-    spectra=fliplr(fitsread([filename '.fits']));
-    spectra=permute(spectra,[3 2 1]);
+    spectra=(fitsread([filename '.fits']));
+    %spectra=permute(spectra,[3 2 1]);
     
     if length(varargin)==2
         newspectra(1,:,:)=spectra';
@@ -21,26 +23,28 @@ function autoimprovewavelength(varargin)
     for or=1:numOrders
         spectra(:,:,or)=bsxfun(@rdivide,spectra(:,:,or),max(spectra(:,:,or)')');
     end
-    spectra=1-spectra;
+    %spectra=1-spectra;
     %specininter(1,:,:)=spectra';
     %spectra=specininter;
     
     spectra(isnan(spectra))=0;
+
+    
     try
         load([filename '-autoFittedWave.mat '])
     catch err
-        orders=[2:4];%1:numOrders;
+        orders=1:numOrders;
         for o=orders
             matpayload=load([filename '-ref-points-order' num2str(o) '.mat']);
-            pin(1,:,o)=matpayload.p;
+            pin(fibreToUse,:,o)=matpayload.p;
             xDatainit(o)={matpayload.xData};
             xRef(o)={matpayload.xRef};
-            wavefit(1,:,o)=polyval(pin(1,:,o),1:size(spectra,2));
+            wavefit(fibreToUse,:,o)=polyval(pin(fibreToUse,:,o),1:size(spectra,2));
         end
         
         
         for order=orders
-            IN1=spectra(1,:,order)/max(spectra(1,:,order));
+            IN1=spectra(fibreToUse,:,order)/max(spectra(fibreToUse,:,order));
             for fibre=[1:size(spectra,1)]
                 IN2=spectra(fibre,:,order)/max(spectra(fibre,:,order));
                 [lags(fibre,:, order),C(fibre,:, order),Info(fibre)]=xcorr_fft(IN1',IN2');
@@ -49,11 +53,10 @@ function autoimprovewavelength(varargin)
         end
         %error(' ')
         avgshift=median(shift,3)
-        
+%         
         %error(' ')
         %% find centroids of xref
-        
-        win=10;
+        win=15;
         for o=orders
             for f=1:size(spectra,1);
                 disp(['Order: ' num2str(o) '  Fiber: ' num2str(f)]);
@@ -83,6 +86,7 @@ function autoimprovewavelength(varargin)
                         xfit(i)=b(a==max(a));
                         
                         if gof.rsquare<0.80
+                            error('ignorepeak')
                             usemask(i)=false;
                             figure(1);clf
                             plot(cf_,x,xzoomprofile,'-x')
@@ -91,24 +95,27 @@ function autoimprovewavelength(varargin)
                             hold off
                             cf_
                             gof
-                            pause;
+                            str = input('Keep? (N)Y','s')
+                            if ~strcmpi('Y',str)
+                                error('ignorepeak')
+                            end
                         end
                     catch err
                         err
                         usemask(i)=false;
                     end
                 end
-                if sum(usemask)<4; disp(o); disp(f); error(' '); end
+                if sum(usemask)<8; disp(o); disp(f); error(' '); end
                 xDatafit(o,f)={xfit(usemask)};
                 xReffibre(o,f)={xRef{o}(usemask)};
                 [p(f,:,o),S(f,:,o),mu(f,:,o)] = polyfit(xDatafit{o,f},xReffibre{o,f},3);
             end
         end
         
-        p=permute(p,[3 2 1]);
-        S=permute(S,[3 2 1]);
-        mu=permute(mu,[3 2 1]);
-        
+%         p=permute(p,[3 2 1]);
+%         S=permute(S,[3 2 1]);
+%         mu=permute(mu,[3 2 1]);
+%         
         save([filename '-autoFittedWave.mat'],'p','S','mu','shift','avgshift')
     end
     

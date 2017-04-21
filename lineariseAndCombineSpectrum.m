@@ -2,8 +2,6 @@ function lineariseAndCombineSpectrum(targetfile,wavematfile,flatmatfile)
 
 %tagetfile - of format <basefilename>-1D-spectra.fits
 
-
-
 flatpayload=load(flatmatfile);
 flatpayload.flatBlaze(isnan(flatpayload.flatBlaze))=1;
 flatpayload.P2PVariationValues(isnan(flatpayload.P2PVariationValues))=1;

@@ -1,4 +1,4 @@
-classdef misprint < handleAllHidden
+classdef misprint < handle%AllHidden
     %MISPRINT MultIorder SPectroscopic ReductIoN Tool
     %
     % Properties are set using key value pairs.
@@ -15,12 +15,12 @@ classdef misprint < handleAllHidden
     %
     %     self.getMaskForIncompleteOrders;
     %     self.traceSpectra;
-    %     self.extractSpectra;
+    %     self.extractSpectra; 
     %     self.getP2PVariationsAndBlaze(false);
     %
     %     self.plotSpectraFor(1:14,true,false)
     %
-    % Copyright (C) Chris Betters 2012-2014
+    % Copyright (C) Chris Betters 2012-2016
     
     properties
         targetBaseFilename,    % base filename of target (file with spectra to be extracted) fits file.
@@ -48,6 +48,7 @@ classdef misprint < handleAllHidden
         gain,               % gain (e-/adu) read from fits file
         readNoise,          % read noise (rms e-) read from fits file
         dispAxis,           % axis of primary dispersion read from fits file
+        wavelengthDirection,% direction of increasing wavelength ({1=L2R},-1=R2L)
         targetHeader,       % structure with target fits header.
         referenceHeader,    % structure with reference fits header.
         
@@ -124,8 +125,9 @@ classdef misprint < handleAllHidden
             parser.addParamValue('parallel',false, @(x) islogical(x));
             parser.addParamValue('numTraceCol', 10, @(x) isnumeric(x));
             parser.addParamValue('dispAxis', [], @(x) isnumeric(x));
+            parser.addParamValue('wavelengthDirection', 1, @(x) isnumeric(x)); 
             parser.addParamValue('wavesolution', '', @(x) ischar(x));
-            parser.addParamValue('minPeakSeperation', 8, @(x) isnumeric(x));
+            parser.addParamValue('minPeakSeperation', 2, @(x) isnumeric(x));
             parser.addParamValue('firstCol', 0, @(x) isnumeric(x));
             parser.addParamValue('lastCol', 0, @(x) isnumeric(x));
             parser.addParamValue('clipping',[0 0 0 0], @(x) isnumeric(x) && length(x)==4);
@@ -153,6 +155,7 @@ classdef misprint < handleAllHidden
             self.lastCol=parser.Results.lastCol; %if zero set to 20 minus miage size (at end of init)
             
             self.dispAxis=parser.Results.dispAxis;
+            self.wavelengthDirection=parser.Results.wavelengthDirection;
             
             self.minPeakSeperation=parser.Results.minPeakSeperation;
             
@@ -258,19 +261,33 @@ classdef misprint < handleAllHidden
                 end
             end
             %% load misprint, and orientate so echelle dispersion is horizontal
+            
             self.imdata=fitsread(self.targetPath);
             
             if self.useReference
                 self.flatImdata=fitsread(self.referencePath);
             end
-            if self.dispAxis==1
-                self.imdata=fliplr(self.imdata'); %
-                
+            if self.dispAxis==2 && self.wavelengthDirection==-1
+                self.imdata=fliplr(self.imdata);
                 if self.useReference
-                    self.flatImdata=fliplr(flatImdata');
+                    self.flatImdata=fliplr(self.flatImdata);
                 end
-                
+                k=0;
+            elseif self.dispAxis==1 && self.wavelengthDirection==1
+                k=1;
+            elseif self.dispAxis==1 && self.wavelengthDirection==-1
+                k=-1;
+            else
+                k=0;
             end
+            
+            self.imdata=rot90(self.imdata,k);
+            if self.useReference
+                self.flatImdata=rot90(self.flatImdata,k);
+            end
+            
+            
+            
             
             if sum(self.clipping)
                 %[left top right bottom]
@@ -301,6 +318,7 @@ classdef misprint < handleAllHidden
                 assert(~(self.treatFibresAsOrders & (self.numOfOrders>1)),...
                     'MISPRINT:init:treatFibresAsOrdersWithMutipleOrders','Can not treat fibres as orders when mutiple orders are set.')
             end
+            
             %% load wavelength solution if supplied
             if ~isempty(parser.Results.wavesolution)
                 self.wavematfile=parser.Results.wavesolution;
@@ -310,23 +328,49 @@ classdef misprint < handleAllHidden
                     S=wavepayload.S;
                     mu=wavepayload.mu;
                     self.wavefit=zeros(self.numOfFibers,self.imdim(2),self.numOfOrders);
-                    for o=1:self.numOfOrders;
-                        for f=1:self.numOfFibers;
+                    for o=1:self.numOfOrders
+                        for f=1:self.numOfFibers
                             self.wavefit(f,:,o)=polyval(p(f,:,o),1:self.imdim(2),S(f,:,o),mu(f,:,o));
                         end
                     end
                 catch err
+                    err
                     wavepayload=load(self.wavematfile,'wavefit');
                     self.wavefit=wavepayload.wavefit;
                 end
-                self.diffractionOrder=1;%round(2*1e-3/31.6*cosd(5)*sind(63.2)./(mean(squeeze(mean(self.wavefit,2)),1)*1e-9)');
+                self.diffractionOrder=round(2*1e-3/31.6*cosd(0)*sind(63.2)./(mean(squeeze(mean(self.wavefit,2)),1)*1e-9)');
             end
             
         end
         
+        function loadNewTarget(self,filename)
+                self.targetBaseFilename=stripextension(filename);
+                self.targetPath = [self.rootDirectory self.targetBaseFilename '.fit'];
+                self.SpectraFitsSaveFileName=[self.targetBaseFilename '-1D-spectra.fits'];
+                self.targetHeader=fitsheader(self.targetPath);
+                self.imdata=fitsread(self.targetPath);
+
+                if self.dispAxis==2 && self.wavelengthDirection==-1
+                    self.imdata=fliplr(self.imdata);
+                    k=0;
+                elseif self.dispAxis==1 && self.wavelengthDirection==1
+                    k=1;
+                elseif self.dispAxis==1 && self.wavelengthDirection==-1
+                    k=-1;
+                else
+                    k=0;
+                end          
+                self.imdata=rot90(self.imdata,k);
+                if sum(self.clipping)
+                    %[left top right bottom]
+                    self.imdata=self.imdata(max([1 self.clipping(2)]):end-self.clipping(4),max([1 self.clipping(1)]):end-self.clipping(3));
+                end
+                self.imdim=size(self.imdata);
+                self.imvariance=(self.readNoise/self.gain)^2 + abs(self.imdata) / self.gain; %http://cxc.cfa.harvard.edu/mta/ASPECT/aca_read_noise/ 
+        end
+        
         function runDefaultExtraction(self)
             % run default set of extraction commands
-            
             self.getMaskForIncompleteOrders;
             self.traceSpectra;
             self.extractSpectra;
@@ -414,7 +458,13 @@ classdef misprint < handleAllHidden
             
             disp('Running order tracer. This may take some time.')
             for i=1:length(columns)
-                [yp,index]=findpeaks(imcol(:,i),'NPEAKS',numOfOrders*numOfFibers,'MINPEAKHEIGHT',max(imcol(:,i))*self.peakcut,'MINPEAKDISTANCE',self.minPeakSeperation);
+                %[yp,index]=findpeaks(imcol(:,i),'NPEAKS',numOfOrders*numOfFibers,'MINPEAKHEIGHT',max(imcol(:,i))*self.peakcut,'MINPEAKDISTANCE',self.minPeakSeperation,'MinPeakProminence',max(imcol(:,i))*0.005);
+                %[yp,index]=findpeaks(imcol(:,i),'NPEAKS',numOfOrders*numOfFibers,'MinPeakProminence',max(imcol(:,i))*0.125);
+                [yp,index] = findpeaks(imcol(:,i),'NPEAKS',numOfOrders*numOfFibers,'SortStr','descend','MINPEAKDISTANCE',self.minPeakSeperation,'MinPeakProminence',max(imcol(:,i))*0.02);
+                [index,sorter] = sort(index);
+                yp=yp(sorter);
+                
+                
                 if self.plotAlot
                     figure(i);clf
                     plot(x,imcol(:,i),index,yp,'xr');
@@ -422,9 +472,9 @@ classdef misprint < handleAllHidden
                     title([num2str(columns(i))])
                 end
                 if numOfOrders==1
-                    orderWidth=self.imdim(1);
-                    orderCenter=round(self.imdim(1)/2);
-                    orderEdges(:,i)=[1 self.imdim(1)];
+                    orderWidth=diff(minmax(index))*1.25;%self.imdim(1);
+                    orderCenter=round(mean(minmax(index)));%round(self.imdim(1)/2);
+                    orderEdges(:,i)=round(orderCenter+[-orderWidth/2 orderWidth/2]);   %[1 self.imdim(1)];
                 else
                     orderWidth=diff(index(1:numOfFibers:end));
                     orderCenter=mean([index(numOfFibers:numOfFibers:end) index(1:numOfFibers:end)],2);
@@ -452,10 +502,12 @@ classdef misprint < handleAllHidden
                     orderProfileX=round(max(orderEdges(order,i),1):min(orderEdges(order+1,i),self.imdim(1)))';
                     orderProfile=imcol(orderProfileX,i);
                     orderProfile=orderProfile/max(orderProfile);
+                    orderProfile=orderProfile-mean(orderProfile(1:5));
+                    orderProfile=orderProfile/max(orderProfile);
                     
                     
                     [~, means(order,:,i), widths(order,:,i), fitxs(order,:,i)] = ...
-                        self.fitNGaussainsAlt(numOfFibers,orderProfileX, orderProfile,self.peakcut);
+                           self.fitNGaussainsAlt(numOfFibers,orderProfileX, orderProfile,self.peakcut);
                     
                     %                    [~, means(order,:,i), widths(order,:,i), fitxs(order,:,i)] = ...
                     %                         fitNGaussains(numOfFibers,orderProfileX, orderProfile,self.peakcut,false);
@@ -472,9 +524,9 @@ classdef misprint < handleAllHidden
                 end
             end
             
-            specCenters=self.polyfitwork(self.imdim,means,columns,2);
-            specWidth=self.polyfitwork(self.imdim,widths,columns,3);
-            meanSpecWidth=squeeze(mean(self.specWidth,3));
+            specCenters=self.polyfitwork(self.imdim,means,columns,4);
+            specWidth=self.polyfitwork(self.imdim,widths,columns,4);
+            meanSpecWidth=squeeze(mean(self.specWidth,4));
             
             self.fittedCenters=means;
             self.fittedCol=columns;
@@ -557,7 +609,7 @@ classdef misprint < handleAllHidden
                 badpixel=matpayload.badpixel;
             catch err
                 if self.useReference
-                    imdatafilt=medfilt2(self.flatImdata,[1 5]);
+                    imdatafilt=medfilt2(self.flatImdata,[4 4]);
                     diffimage=self.flatImdata-imdatafilt;
                     badpixel=abs(diffimage-mean2(diffimage)) > std2(diffimage)*3;
                     %save(self.spectraTracePath,'badpixel','-append')
@@ -729,13 +781,13 @@ classdef misprint < handleAllHidden
                     
                     p(2).select();
                     for f=1:self.numOfFibers
-                        FlattenedSpectraNorm(f,:,order)=FlattenedSpectra(f,:,order)/(max2(FlattenedSpectra(f,120:220,order)));
-                        plot(1:self.imdim(2),FlattenedSpectraNorm(f,:,order)+(self.numOfFibers-f)*1)
+                        FlattenedSpectraNorm(f,:,order)=FlattenedSpectra(f,:,order)/(median(FlattenedSpectra(f,ceil(end/2-20:end/2+20),order)));
+                        plot(1:self.imdim(2),FlattenedSpectraNorm(f,:,order)+(self.numOfFibers-f)*0.5)
                         hold all
                     end
                     %ylim([0 max([FlattenedSpectraNorm(:)*1.01; 2^14])]);
-                    ylim(ylimits)
-                    xlim(xlimits)
+                    %ylim(ylimits)
+                    %xlim(xlimits)
                     hold off
                     grid on
                     xlabel('Detector Column')
@@ -964,10 +1016,12 @@ classdef misprint < handleAllHidden
         function spectraValues=extractSpectra(self)
             % extract spectra using trace - each order done individually (faster).
             
-            if ~exist(self.SpectraFitsSaveFileName,'file') || self.forceExtract
+            if self.forceExtract || ~java.io.File(fullfile(pwd,self.SpectraFitsSaveFileName)).exists
+                disp(['Extracting: ' self.SpectraFitsSaveFileName])
+                %~exist(fullfile(pwd,self.SpectraFitsSaveFileName),'file') %~exist(self.SpectraFitsSaveFileName,'file')
                 spectraValues=zeros(self.numOfFibers,self.imdim(2),self.numOfOrders);
                 spectraVar=zeros(self.numOfFibers,self.imdim(2),self.numOfOrders);
-                backgroundValues=zeros(size(self.imdata));self.imdata;
+                backgroundValues=zeros(size(self.imdata));
                 
                 assertWarn(self.forceExtract,...
                     'MISPRINT:extractSpectra:forceExtractFlagSet',...
@@ -1018,19 +1072,22 @@ classdef misprint < handleAllHidden
                     spectraVar(:,:,order)=specVar;
                 end
                 
+                originHDR=self.targetHeader;
+                originHDR.IMAGETYP='spectra';
+                
                 spectra1DHDR=createcards('NUMORDER',self.numOfOrders,'number of orders');
                 spectra1DHDR.addcard('NUMFIBER',self.numOfFibers,'number of fibers')
                 spectra1DHDR.addcard('TRACE',self.spectraTracePath,' ')
                 
-                fitswrite(spectraValues,self.SpectraFitsSaveFileName,spectra1DHDR.cards)
-                fitswrite(spectraVar,self.SpectraFitsSaveFileName,'writemode','append')
-                fitswrite(backgroundValues,self.SpectraFitsSaveFileName,'writemode','append')
+                fitswrite(single(spectraValues),self.SpectraFitsSaveFileName,'keywords',[fitstructure2cell(originHDR); spectra1DHDR.cards])
+                fitswrite(single(spectraVar),self.SpectraFitsSaveFileName,'writemode','append')
+                %fitswrite(single(backgroundValues),self.SpectraFitsSaveFileName,'writemode','append')
             else
                 disp(['Pre-existing extraction data found at: ' self.SpectraFitsSaveFileName])
                 
                 spectraValues=fitsread(self.SpectraFitsSaveFileName);
                 spectraVar=fitsread(self.SpectraFitsSaveFileName,'image',1);
-                backgroundValues=fitsread(self.SpectraFitsSaveFileName,'image',2);
+%                backgroundValues=fitsread(self.SpectraFitsSaveFileName,'image',2);
             end
             if self.treatFibresAsOrders
                 warning(' ')
@@ -1045,7 +1102,7 @@ classdef misprint < handleAllHidden
                 self.spectraValues=spectraValues;
                 self.spectraVar=spectraVar;
             end
-            self.backgroundValues=backgroundValues;
+            %self.backgroundValues=backgroundValues;
         end
         
         function [spectraValues, spectraErrors, background, chi2]=MPDoptimalExtBack(self,dataRows,orderProfile,varProfile,specCenters,specWidth,RN)
@@ -1117,16 +1174,28 @@ classdef misprint < handleAllHidden
             spectraErrors=spectraValues;
             background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
             for col=1:size(specCenters,1)
-                phi=bsxfun(@times, exp(-(bsxfun(@rdivide, bsxfun(@minus,repmat(dataRows{col},...
-                    [self.numOfFibers,1]),specCenters(col,:)'), specWidth(col,:)')).^2), 1./(specWidth(col,:)'*sqrt(pi)));
+                 %phi=bsxfun(@times, exp(-(bsxfun(@rdivide, bsxfun(@minus,repmat(dataRows{col},...
+                 %    [self.numOfFibers,1]),specCenters(col,:)'), specWidth(col,:)')).^2), 1./(specWidth(col,:)'*sqrt(pi)));
+                 
+                 cols=repmat(dataRows{col},[self.numOfFibers,1]);
+                 prepreprephi=bsxfun(@minus,cols',specCenters(col,:));
+                 
+                 preprephi1=bsxfun(@rdivide,prepreprephi, specWidth(col,:));
+                 
+                 prephi1=exp(-(preprephi1).^2);
+                  
+                 %phi=[prephi1./(specWidth(col,:)*sqrt(pi))];
+                 phi=bsxfun(@rdivide,prephi1,[specWidth(col,:)*sqrt(pi)]);
+
                 %phi=bsxfun(@times, phi4, specPeaks);
                 %phi=sparse(phi);
                 phi(phi<1e-6)=0;
                 %             end
                 
                 %            if 1
-                varweightedPhi=bsxfun(@rdivide,phi,varProfile{col})';
-                c=phi*varweightedPhi;
+                %varweightedPhi=bsxfun(@rdivide,phi,varProfile{col})';
+                varweightedPhi=bsxfun(@rdivide,phi,varProfile{col}');
+                c=phi'*varweightedPhi;
                 b=((orderProfile{col})*varweightedPhi)';
                 %             else
                 %                 sigmaweightedPhi=bsxfun(@rdivide,phi,sqrt(varProfile))';
@@ -1135,8 +1204,8 @@ classdef misprint < handleAllHidden
                 %             end
                 
                 %setup error
-                ce=phi*phi';
-                be=((varProfile{col}-RN^2)*phi')';
+                ce=phi'*phi;
+                be=((varProfile{col}-RN^2)*phi)';
                 
                 %solve
                 spec=(c\b);
@@ -1148,7 +1217,7 @@ classdef misprint < handleAllHidden
                 %spectraErrors=linsolve(ce,be);
                 %assert(~(col==400))
             end
-            %background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
+            background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
             spectraValues(spectraValues<0)=0;
             
         end
@@ -1278,9 +1347,11 @@ classdef misprint < handleAllHidden
             spectraValues=zeros(size(specCenters'));
             spectraErrors=spectraValues;
             for col=1:size(specCenters,1)
-%                assert(~(col==300))
-                spectraValues(:,col)=sum(orderProfile{col}(round([-specWidth(col)*2:specWidth(col)*2]+self.meanOrderWidth/2)));
-                spectraErrors(:,col)=sum(varProfile{col}(round([-specWidth(col)*2:specWidth(col)*2]++self.meanOrderWidth/2)));
+                for fibre=1:size(specCenters,2)
+                    %                assert(~(col==300))
+                    spectraValues(fibre,col)=sum(orderProfile{col}(round([-specWidth(col)*1.25:specWidth(col)*1.25]+specCenters(col,fibre))));
+                    spectraErrors(fibre,col)=sum(varProfile{col}(round([-specWidth(col)*1.25:specWidth(col)*1.25]+specCenters(col,fibre))));
+                end
             end
             
             background=cellfun(@(x) zeros(size(x)),orderProfile,'UniformOutput',false);
@@ -1307,20 +1378,27 @@ classdef misprint < handleAllHidden
             spectraVarlinearlong=zeros(self.numOfFibers,self.imdim(2)*self.numOfOrders,self.numOfOrders);
             
             for o=1:self.numOfOrders
-                for f=1:size(spec,1);
-                    speclinearlong(f,:,o)=interp1(self.wavefit(f,:,o),spec(f,:,o),longwavelinear,'spline',0);
-                    spectraVarlinearlong(f,:,o)=interp1(self.wavefit(f,:,o),specVar(f,:,o),longwavelinear,'spline',0);
-                    specflatlong(f,:,o)=interp1(self.wavefit(f,:,o),self.flatBlaze(f,:,o),longwavelinear,'spline',0);
+                for f=1:size(spec,1)
+                    speclinearlong(f,:,o)=interp1(self.wavefit(f,:,o),spec(f,:,o),longwavelinear,'spline',NaN);
+                    spectraVarlinearlong(f,:,o)=interp1(self.wavefit(f,:,o),specVar(f,:,o),longwavelinear,'spline',NaN);
+                    specflatlong(f,:,o)=interp1(self.wavefit(f,:,o),self.flatBlaze(f,:,o),longwavelinear,'spline',NaN);
                 end
             end
             %specflatlong=ones(size(speclinearlong));
+            %specflatlong=bsxfun(@rdivide,specflatlong,max(specflatlong));
             
-            finalspeclong=nansum(speclinearlong,3)';%./nansum(specflatlong,3)';
-            finalspecVarlong=nansum(spectraVarlinearlong,3)';%./nansum(specflatlong,3)';
-            flatspeclong=nansum(specflatlong,3)';
+            if self.treatFibresAsOrders
+                finalspeclong=nansum(speclinearlong,3)';%./nansum(specflatlong,3)';
+                finalspecVarlong=nansum(spectraVarlinearlong,3)';%./nansum(specflatlong,3)';
+                flatspeclong=nansum(specflatlong,3)';
+            else
+                finalspeclong=nansum(speclinearlong,3)';%./nansum(specflatlong,3)';
+                finalspecVarlong=nansum(spectraVarlinearlong,3)';%./nansum(specflatlong,3)';
+                flatspeclong=nansum(specflatlong,3)';
+            end
             
-            finalspeclong=finalspeclong./bsxfun(@rdivide,flatspeclong,mean(flatspeclong));
-            finalspecVarlong=finalspecVarlong./bsxfun(@rdivide,flatspeclong,mean(flatspeclong));
+            finalspeclong=finalspeclong./bsxfun(@rdivide,flatspeclong,nanmean(flatspeclong));
+            finalspecVarlong=finalspecVarlong./bsxfun(@rdivide,flatspeclong,nanmean(flatspeclong));
             
             toclip=isnan(sum(finalspeclong,2));
             
@@ -1332,8 +1410,10 @@ classdef misprint < handleAllHidden
             self.finalSpectraVar=squeeze(finalspecVarlong_clipped');
             self.finalWave=longwavelinear_clipped;
             
-            self.finalSpec=squeeze(sum(finalspeclong_clipped,2)');
-            self.finalSpecVar=squeeze(sum(finalspecVarlong_clipped,2)');
+            finalSpec=squeeze(sum(finalspeclong_clipped,2)');
+            finalSpecVar=squeeze(sum(finalspecVarlong_clipped,2)');
+            self.finalSpec=finalSpec;
+            self.finalSpecVar=finalSpecVar;
             
             if 0
                 %%
@@ -1358,8 +1438,8 @@ classdef misprint < handleAllHidden
                 header.CTYPE1='Wavelength';
                 header.CUNIT1='nm';
                 header.CDELT1=mean(diff(self.finalWave));
-                header.UTC=round((header.JD-floor(header.JD))*24*60*60);
-                header.MJD=header.JD-2400000.5;
+%                header.UTC=round((header.JD-floor(header.JD))*24*60*60);
+%                header.MJD=header.JD-2400000.5;
                 header.DLAT=-33.873651000000000000;
                 header.DLONG=151.206889600000070000;%sydney
                 header.GEOELV=100;
@@ -1369,11 +1449,11 @@ classdef misprint < handleAllHidden
                 header2.EXTNAME='FLUXERROR';
                 headercell2=fitstructure2cell(header2);
                 
-                fitswrite(finalspeclong_clipped,[self.targetBaseFilename '-IndivCalSpec.fit'],'keywords',headercell1(8:end,:))
-                fitswrite(finalspecVarlong_clipped,[self.targetBaseFilename '-IndivCalSpec.fit'],'writemode','append','keywords',headercell2)
+                fitswrite(single(finalspeclong_clipped),[self.targetBaseFilename '-IndivCalSpec.fits'],'keywords',headercell1)
+                fitswrite(single(finalspecVarlong_clipped),[self.targetBaseFilename '-IndivCalSpec.fits'],'writemode','append','keywords',headercell2)
                 
-                fitswrite(self.finalSpec,[self.targetBaseFilename '-CombCalSpec.fit'],'keywords',headercell1(8:end,:))
-                fitswrite(self.finalSpecVar,[self.targetBaseFilename '-CombCalSpec.fit'],'writemode','append','keywords',headercell2)
+                fitswrite(single(finalSpec),[self.targetBaseFilename '-CombCalSpec.fits'],'keywords',headercell1)
+                fitswrite(single(finalSpecVar),[self.targetBaseFilename '-CombCalSpec.fits'],'writemode','append','keywords',headercell2)
             end
         end
     end
@@ -1402,5 +1482,8 @@ classdef misprint < handleAllHidden
         out=nGausFunc(x,xData,N)
         wavecalGUI
         autoimprovewavelength(varargin)
+        autoimprovewavelengthNew(filename,varargin)
+        str=makeNGaussainEqaution(N)
+        str=makeNGaussainEqautionFWHM(N)
     end
 end

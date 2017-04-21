@@ -16,7 +16,11 @@ if N==1
     peakXInd=find(max(y)==y,1,'first');
     peakEstimate=y(peakXInd);
 else
-    [peakEstimate, peakXInd]=findpeaks(y, 'NPEAKS',N,'MINPEAKDISTANCE',4,'MINPEAKHEIGHT',minpeakheight); %median(y)*1.5
+    %[peakEstimate, peakXInd]=findpeaks(y, 'NPEAKS',N,'MINPEAKDISTANCE',2,'MINPEAKHEIGHT',minpeakheight);%,'MinPeakWidth',1);%,'MinPeakProminence',0.1); %median(y)*1.5
+    %[peakEstimate, peakXInd]=findpeaks(y,'NPEAKS',N,'MinPeakProminence',max(y)*0.002);
+    [peakEstimate,peakXInd] = findpeaks(y,'NPEAKS',N,'SortStr','descend','MinPeakProminence',max(y)*0.01);
+    [peakXInd,sorter] = sort(peakXInd);
+    peakEstimate=peakEstimate(sorter);
 end
 peakPosEstimate=x(peakXInd);
 
@@ -29,7 +33,7 @@ options = optimset('Display','off',...
 
 x0=[peakEstimate' peakPosEstimate' ones(1,N) 0.1];
 xlb=[peakEstimate'*0.8 peakPosEstimate'*0.99 ones(1,N)*0 0];
-xub=[peakEstimate'*1.2 peakPosEstimate'*1.01 ones(1,N)*3 0.2];
+xub=[peakEstimate'*1.2 peakPosEstimate'*1.01 ones(1,N)*5 0.2];
 
 fun = @(co,xData) sum(misprint.nGausFunc(co,xData,N),2);
 
