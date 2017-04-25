@@ -1358,8 +1358,12 @@ classdef misprint < handleAllHidden
                 header.CTYPE1='Wavelength';
                 header.CUNIT1='nm';
                 header.CDELT1=mean(diff(self.finalWave));
+                try 
                 header.UTC=round((header.JD-floor(header.JD))*24*60*60);
                 header.MJD=header.JD-2400000.5;
+                catch
+                    
+                end
                 header.DLAT=-33.873651000000000000;
                 header.DLONG=151.206889600000070000;%sydney
                 header.GEOELV=100;

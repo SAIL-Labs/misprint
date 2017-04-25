@@ -18,7 +18,7 @@ for i=1:numOrders
     for j=1:numOfFibres
         
         [p(i,j,:),~,mu(i,j,:)]=polyfit(column',squeeze(means(i,j,:)),polyorder);
-        specCenters(i,j,:)=polyval(squeeze(p(i,j,:)),[1:imdim(2)]+offset(2),[],squeeze(mu(i,j,:)))+offset(1);
+        specCenters(i,j,:)=polyval(squeeze(p(i,j,:)),[1:imdim(2)]+offset(1),[],squeeze(mu(i,j,:))) + offset(2);
         
         if plotalot
             %subplot(1,2,1)
