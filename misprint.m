@@ -9,7 +9,7 @@ classdef misprint < handleAllHidden
     %         'numOfOrders',14,'numOfFibers',29,...
     %         'forceTrace',false,'forceExtract',false,...
     %         'forceDefineMaskEdge',false,'needsMask',false,...
-    %         'peakcut',0.07,'minPeakSeperation',3,...
+    %         'peakthreshold',0.07,'minPeakSeperation',3,...
     %         'numTraceCol',40,'firstCol',140,'lastCol',300,...
     %         'parallel',false);
     %
@@ -94,7 +94,7 @@ classdef misprint < handleAllHidden
         firstCol,           % first column of trace
         lastCol,            % last column of trace
         minPeakSeperation,  % min peak seperation for tracing and peakfinder
-        peakcut,            % MINPEAKHEIGHT for spectra tracing detection. (fraction of mean of current profile).
+        peakthreshold,      % MINPEAKHEIGHT for spectra tracing detection. (fraction of mean of current profile).
         
         treatFibresAsOrders, % allows for overalping orders, ie AWG spectra
         
@@ -121,6 +121,7 @@ classdef misprint < handleAllHidden
             parser.addParamValue('numOfFibers', 19, @(x) isnumeric(x));
             parser.addParamValue('usecurrentfolderonly',false, @(x) islogical(x));
             parser.addParamValue('peakcut', 0.8, @(x) isnumeric(x));
+            parser.addParamValue('peakthreshold', 0.8, @(x) isnumeric(x));
             parser.addParamValue('parallel',false, @(x) islogical(x));
             parser.addParamValue('numTraceCol', 10, @(x) isnumeric(x));
             parser.addParamValue('dispAxis', [], @(x) isnumeric(x));
@@ -145,7 +146,13 @@ classdef misprint < handleAllHidden
             self.needsMask=parser.Results.needsMask;
             
             self.usecurrentfolderonly=parser.Results.usecurrentfolderonly;
-            self.peakcut=parser.Results.peakcut;
+            
+            % backward compatiable for code using peakcut
+            if strcmp(parser.UsingDefaults,'peakthreshold')
+                self.peakthreshold=parser.Results.peakcut; 
+            else
+                self.peakthreshold=parser.Results.peakthreshold;
+            end
             
             self.parallel=parser.Results.parallel;
             self.numTraceCol=parser.Results.numTraceCol;
@@ -414,11 +421,11 @@ classdef misprint < handleAllHidden
             
             disp('Running order tracer. This may take some time.')
             for i=1:length(columns)
-                [yp,index]=findpeaks(imcol(:,i),'NPEAKS',numOfOrders*numOfFibers,'MINPEAKHEIGHT',max(imcol(:,i))*self.peakcut,'MINPEAKDISTANCE',self.minPeakSeperation);
+                [yp,index]=findpeaks(imcol(:,i),'NPEAKS',numOfOrders*numOfFibers,'MINPEAKHEIGHT',max(imcol(:,i))*self.peakthreshold,'MINPEAKDISTANCE',self.minPeakSeperation);
                 if self.plotAlot
                     figure(i);clf
                     plot(x,imcol(:,i),index,yp,'xr');
-                    line([1 length(imcol(:,i))],[max(imcol(:,i)) max(imcol(:,i))]*self.peakcut)
+                    line([1 length(imcol(:,i))],[max(imcol(:,i)) max(imcol(:,i))]*self.peakthreshold)
                     title([num2str(columns(i))])
                 end
                 if numOfOrders==1
@@ -455,10 +462,10 @@ classdef misprint < handleAllHidden
                     
                     
                     [~, means(order,:,i), widths(order,:,i), fitxs(order,:,i)] = ...
-                        self.fitNGaussainsAlt(numOfFibers,orderProfileX, orderProfile,self.peakcut);
+                        self.fitNGaussainsAlt(numOfFibers,orderProfileX, orderProfile,self.peakthreshold);
                     
                     %                    [~, means(order,:,i), widths(order,:,i), fitxs(order,:,i)] = ...
-                    %                         fitNGaussains(numOfFibers,orderProfileX, orderProfile,self.peakcut,false);
+                    %                         fitNGaussains(numOfFibers,orderProfileX, orderProfile,self.peakthreshold,false);
                     
                     if self.plotAlot
                         figure(i);clf;
@@ -1402,7 +1409,7 @@ classdef misprint < handleAllHidden
     methods (Static)
         [specCenters, p, mu]=polyfitwork(imdim,means,column,polyorder,offset,plotalot)
         prepareFrames
-        [peaks,means,widths,xfitted] = fitNGaussainsAlt(N,x,y,peakcut,plotting)
+        [peaks,means,widths,xfitted] = fitNGaussainsAlt(N,x,y,peakthreshold,plotting)
         out=nGausFunc(x,xData,N)
         wavecalGUI
         autoimprovewavelength(varargin)
